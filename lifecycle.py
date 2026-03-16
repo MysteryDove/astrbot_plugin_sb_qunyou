@@ -51,11 +51,13 @@ class Lifecycle:
         from .services.emotion import EmotionEngine
         from .services.jargon import JargonService
         from .services.hook_handler import HookHandler
+        from .services.persona_binding import PersonaBindingService
 
         p.group_persona = GroupPersonaService(config, p.llm)
         p.speaker_memory = SpeakerMemoryService(config, p.llm)
         p.emotion = EmotionEngine(config, p.llm)
         p.jargon = JargonService(config, p.llm)
+        p.persona_binding = PersonaBindingService(config, p.llm)
         p.hook_handler = HookHandler(config, p)
 
         # Pipeline

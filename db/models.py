@@ -211,3 +211,58 @@ class LearningJob(Base):
     completed_at: Mapped[Optional[_dt.datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+# ---------------------------------------------------------------------------
+# 10. group_persona_bindings — 群组人格绑定 (独立链路)
+# ---------------------------------------------------------------------------
+class GroupPersonaBinding(Base):
+    __tablename__ = "group_persona_bindings"
+
+    group_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    bound_persona_id: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    active_version_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("persona_tone_versions.id", ondelete="SET NULL"), nullable=True
+    )
+    is_learning_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    tone_message_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[_dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    # relationships
+    active_version: Mapped[Optional["PersonaToneVersion"]] = relationship(
+        foreign_keys=[active_version_id], lazy="joined"
+    )
+    tone_versions: Mapped[list["PersonaToneVersion"]] = relationship(
+        back_populates="binding",
+        foreign_keys="PersonaToneVersion.group_id",
+        order_by="PersonaToneVersion.version_num.desc()",
+        cascade="all, delete-orphan",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 11. persona_tone_versions — 人格语气版本记录
+# ---------------------------------------------------------------------------
+class PersonaToneVersion(Base):
+    __tablename__ = "persona_tone_versions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    group_id: Mapped[str] = mapped_column(
+        String(128), ForeignKey("group_persona_bindings.group_id", ondelete="CASCADE"), nullable=False
+    )
+    version_num: Mapped[int] = mapped_column(Integer, nullable=False)
+    learned_tone: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    is_manual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[_dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    binding: Mapped["GroupPersonaBinding"] = relationship(
+        back_populates="tone_versions", foreign_keys=[group_id]
+    )
+
+    __table_args__ = (
+        Index("ix_tone_ver_group_num", "group_id", "version_num", unique=True),
+    )

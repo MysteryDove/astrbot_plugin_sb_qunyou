@@ -115,6 +115,18 @@ class CacheConfig(BaseModel):
     embedding_ttl: int = 600     # embedding 缓存 TTL (秒)
 
 
+class PersonaBindingConfig(BaseModel):
+    """独立人格绑定与语气学习配置"""
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    auto_learning_enabled: bool = True
+    auto_apply_learned_tone: bool = True
+    tone_learning_threshold: int = 100
+    global_learning_cron: str = "0 3 * * *"
+    max_tone_history_versions: int = 10
+
+
 class PluginConfig(BaseModel):
     """插件总配置"""
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
@@ -130,6 +142,7 @@ class PluginConfig(BaseModel):
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
     rerank: RerankConfig = Field(default_factory=RerankConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
+    persona_binding: PersonaBindingConfig = Field(default_factory=PersonaBindingConfig)
 
     # 全局 LLM Provider ID
     embedding_provider_id: Optional[str] = None    # 向量 embedding 模型
@@ -157,6 +170,7 @@ class PluginConfig(BaseModel):
         knowledge_raw = raw.get("Knowledge_Settings", {})
         rerank_raw = raw.get("Rerank_Settings", {})
         cache_raw = raw.get("Cache_Settings", {})
+        persona_binding_raw = raw.get("PersonaBinding_Settings", {})
 
         return cls(
             debounce=DebounceConfig(**debounce_raw) if debounce_raw else DebounceConfig(),
@@ -169,6 +183,7 @@ class PluginConfig(BaseModel):
             knowledge=KnowledgeConfig(**knowledge_raw) if knowledge_raw else KnowledgeConfig(),
             rerank=RerankConfig(**rerank_raw) if rerank_raw else RerankConfig(),
             cache=CacheConfig(**cache_raw) if cache_raw else CacheConfig(),
+            persona_binding=PersonaBindingConfig(**persona_binding_raw) if persona_binding_raw else PersonaBindingConfig(),
             embedding_provider_id=model_raw.get("embedding_provider_id"),
             main_llm_provider_id=model_raw.get("main_llm_provider_id"),
             fast_llm_provider_id=model_raw.get("fast_llm_provider_id"),
