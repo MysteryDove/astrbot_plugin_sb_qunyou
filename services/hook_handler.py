@@ -15,6 +15,7 @@ Reranker (if available) re-orders extra_parts by relevance.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from typing import Any, Optional, TYPE_CHECKING
 
 from astrbot.api import logger
@@ -25,6 +26,7 @@ from ..prompts.templates import (
     INJECTION_EMOTION,
     INJECTION_GROUP_PERSONA,
     INJECTION_JARGON,
+    INJECTION_PERSONA_BINDING,
     INJECTION_THREAD_CONTEXT,
     INJECTION_USER_MEMORIES,
 )
@@ -61,6 +63,7 @@ class HookHandler:
             "memories": self._fetch_memories(group_id, user_id, message_text, db),
             "knowledge": self._fetch_knowledge(group_id, message_text),
             "jargon": self._fetch_jargon(group_id, message_text, db),
+            "persona_binding": self._fetch_persona_binding(group_id),
         }
 
         results: dict[str, str] = {}
@@ -77,6 +80,10 @@ class HookHandler:
         # ---- Build injection ----
         system_parts: list[str] = []
         extra_parts: list[str] = []
+
+        # HIGHEST TRUST → persona binding overrides default persona
+        if results.get("persona_binding"):
+            system_parts.append(results["persona_binding"])
 
         # HIGH TRUST → system prompt
         if results["persona"]:
@@ -234,7 +241,8 @@ class HookHandler:
             # Check cache first
             cache = self._get_cache()
             if cache:
-                cached = cache.get("context", f"jargon:{group_id}:{text[:50]}")
+                text_hash = hashlib.md5(text.encode()).hexdigest()[:12]
+                cached = cache.get("context", f"jargon:{group_id}:{text_hash}")
                 if cached is not None:
                     return cached
 
@@ -244,7 +252,8 @@ class HookHandler:
             result = "\n".join(f"「{t}」= {m}" for t, m in matches)
 
             if cache:
-                cache.set("context", f"jargon:{group_id}:{text[:50]}", result)
+                text_hash = hashlib.md5(text.encode()).hexdigest()[:12]
+                cache.set("context", f"jargon:{group_id}:{text_hash}", result)
             return result
         except Exception:
             return ""
@@ -259,7 +268,8 @@ class HookHandler:
         try:
             # Check cache first
             cache = self._get_cache()
-            cache_key = f"knowledge:{group_id}:{text[:80]}"
+            text_hash = hashlib.md5(text.encode()).hexdigest()[:12]
+            cache_key = f"knowledge:{group_id}:{text_hash}"
             if cache:
                 cached = cache.get("knowledge", cache_key)
                 if cached is not None:
@@ -275,6 +285,42 @@ class HookHandler:
             return result
         except Exception as e:
             logger.debug(f"[Hook] Knowledge fetch failed: {e}")
+            return ""
+
+    async def _fetch_persona_binding(self, group_id: str) -> str:
+        """Fetch bound persona prompt + active learned tone for injection."""
+        persona_binding_svc = getattr(self._p, "persona_binding", None)
+        if not persona_binding_svc:
+            return ""
+
+        db = getattr(self._p, "db", None)
+        if not db:
+            return ""
+
+        try:
+            async with db.session() as session:
+                from ..db.repo import Repository
+                repo = Repository(session)
+                binding, tone_text = await repo.get_persona_binding_with_active_tone(group_id)
+
+                if not binding or not binding.bound_persona_id:
+                    return ""
+
+            # PersonaManager lookup — no DB needed
+            persona_prompt = await persona_binding_svc.get_persona_prompt_by_id(
+                binding.bound_persona_id, self._p.context
+            )
+
+            if not persona_prompt and not tone_text:
+                return ""
+
+            from ..prompts.templates import INJECTION_PERSONA_BINDING
+            return INJECTION_PERSONA_BINDING.format(
+                persona_prompt=persona_prompt or "",
+                tone=tone_text or "(尚未学习语气)",
+            )
+        except Exception as e:
+            logger.debug(f"[Hook] Persona binding fetch failed: {e}")
             return ""
 
     # ------------------------------------------------------------------ #

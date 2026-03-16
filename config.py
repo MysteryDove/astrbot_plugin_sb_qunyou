@@ -34,6 +34,7 @@ class TopicConfig(BaseModel):
     max_threads_per_group: int = 10
     summary_interval: int = 20  # 每 N 条消息更新线程摘要
     fast_model_provider_id: Optional[str] = None  # 话题感知用快速模型
+    centroid_ema_alpha: float = 0.1  # 话题向量指数移动平均 alpha (0=不更新, 1=完全替换)
 
 
 class GroupPersonaConfig(BaseModel):
@@ -64,13 +65,14 @@ class JargonConfig(BaseModel):
     min_frequency: int = 5          # 最低出现次数才入库
     batch_infer_size: int = 20      # 每批推断含义的词数
     infer_max_tokens: int = 150     # LLM 推断含义的 max_tokens
+    flush_threshold: int = 500      # 每组累计 N 个词后自动 flush 到 DB
 
 
 class DatabaseConfig(BaseModel):
     """PostgreSQL 数据库配置"""
     model_config = ConfigDict(extra="ignore")
 
-    dsn: str = "postgresql+asyncpg://postgres:password@localhost:5432/qunyou"
+    dsn: str = "postgresql+asyncpg://postgres:CHANGE_ME@localhost:5432/qunyou"
     pool_size: int = 10
     pool_min_size: int = 2
     echo: bool = False
@@ -82,7 +84,9 @@ class WebUIConfig(BaseModel):
 
     enabled: bool = True
     port: int = 7834
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
+    auth_token: Optional[str] = None  # Bearer token for API auth; None = no auth
+    cors_origins: list[str] = ["http://localhost:7834", "http://127.0.0.1:7834"]
 
 
 class KnowledgeConfig(BaseModel):
@@ -115,6 +119,18 @@ class CacheConfig(BaseModel):
     embedding_ttl: int = 600     # embedding 缓存 TTL (秒)
 
 
+class PersonaBindingConfig(BaseModel):
+    """独立人格绑定与语气学习配置"""
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    auto_learning_enabled: bool = True
+    auto_apply_learned_tone: bool = True
+    tone_learning_threshold: int = 100
+    global_learning_cron: str = "0 3 * * *"  # TODO: 尚未接入调度器，预留配置项
+    max_tone_history_versions: int = 10
+
+
 class PluginConfig(BaseModel):
     """插件总配置"""
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
@@ -130,6 +146,7 @@ class PluginConfig(BaseModel):
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
     rerank: RerankConfig = Field(default_factory=RerankConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
+    persona_binding: PersonaBindingConfig = Field(default_factory=PersonaBindingConfig)
 
     # 全局 LLM Provider ID
     embedding_provider_id: Optional[str] = None    # 向量 embedding 模型
@@ -157,6 +174,7 @@ class PluginConfig(BaseModel):
         knowledge_raw = raw.get("Knowledge_Settings", {})
         rerank_raw = raw.get("Rerank_Settings", {})
         cache_raw = raw.get("Cache_Settings", {})
+        persona_binding_raw = raw.get("PersonaBinding_Settings", {})
 
         return cls(
             debounce=DebounceConfig(**debounce_raw) if debounce_raw else DebounceConfig(),
@@ -169,6 +187,7 @@ class PluginConfig(BaseModel):
             knowledge=KnowledgeConfig(**knowledge_raw) if knowledge_raw else KnowledgeConfig(),
             rerank=RerankConfig(**rerank_raw) if rerank_raw else RerankConfig(),
             cache=CacheConfig(**cache_raw) if cache_raw else CacheConfig(),
+            persona_binding=PersonaBindingConfig(**persona_binding_raw) if persona_binding_raw else PersonaBindingConfig(),
             embedding_provider_id=model_raw.get("embedding_provider_id"),
             main_llm_provider_id=model_raw.get("main_llm_provider_id"),
             fast_llm_provider_id=model_raw.get("fast_llm_provider_id"),

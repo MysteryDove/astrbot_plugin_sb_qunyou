@@ -18,9 +18,11 @@ from .models import (
     ActiveThread,
     BotResponse,
     EmotionState,
+    GroupPersonaBinding,
     GroupProfile,
     JargonTerm,
     LearningJob,
+    PersonaToneVersion,
     RawMessage,
     ThreadMessage,
     UserMemory,
@@ -143,11 +145,16 @@ class Repository:
             await self._s.execute(stmt)
 
     async def increment_group_message_count(self, group_id: str) -> int:
-        """Increment and return the new message_count_since_learn."""
-        profile = await self.get_or_create_group_profile(group_id)
-        profile.message_count_since_learn += 1
-        await self._s.flush()
-        return profile.message_count_since_learn
+        """Atomically increment and return the new message_count_since_learn."""
+        await self.get_or_create_group_profile(group_id)
+        stmt = (
+            update(GroupProfile)
+            .where(GroupProfile.group_id == group_id)
+            .values(message_count_since_learn=GroupProfile.message_count_since_learn + 1)
+            .returning(GroupProfile.message_count_since_learn)
+        )
+        result = await self._s.execute(stmt)
+        return result.scalar_one()
 
     async def list_all_groups(self) -> Sequence[GroupProfile]:
         stmt = select(GroupProfile).order_by(GroupProfile.updated_at.desc())
@@ -472,3 +479,188 @@ class Repository:
             .values(status="failed", result={"error": error})
         )
         await self._s.execute(stmt)
+
+    # =====================================================================
+    #  GroupPersonaBinding & PersonaToneVersion
+    # =====================================================================
+
+    async def get_or_create_persona_binding(self, group_id: str) -> GroupPersonaBinding:
+        stmt = select(GroupPersonaBinding).where(GroupPersonaBinding.group_id == group_id)
+        result = await self._s.execute(stmt)
+        binding = result.scalar_one_or_none()
+        if binding is None:
+            binding = GroupPersonaBinding(group_id=group_id)
+            self._s.add(binding)
+            await self._s.flush()
+        return binding
+
+    async def get_persona_binding_with_active_tone(
+        self, group_id: str
+    ) -> tuple[GroupPersonaBinding | None, str]:
+        """Return (binding, active_tone_text). Returns (None, '') if no binding."""
+        stmt = select(GroupPersonaBinding).where(GroupPersonaBinding.group_id == group_id)
+        result = await self._s.execute(stmt)
+        binding = result.scalar_one_or_none()
+        if binding is None:
+            return None, ""
+
+        tone_text = ""
+        if binding.active_version is not None:
+            tone_text = binding.active_version.learned_tone
+        return binding, tone_text
+
+    async def add_new_tone_version(
+        self,
+        group_id: str,
+        learned_tone: str,
+        auto_activate: bool = True,
+        is_manual: bool = False,
+    ) -> PersonaToneVersion:
+        """Insert a new tone version and optionally activate it."""
+        # Get or create binding
+        binding = await self.get_or_create_persona_binding(group_id)
+
+        # Determine next version number
+        max_stmt = (
+            select(func.coalesce(func.max(PersonaToneVersion.version_num), 0))
+            .where(PersonaToneVersion.group_id == group_id)
+        )
+        result = await self._s.execute(max_stmt)
+        next_num = result.scalar_one() + 1
+
+        version = PersonaToneVersion(
+            group_id=group_id,
+            version_num=next_num,
+            learned_tone=learned_tone,
+            is_manual=is_manual,
+        )
+        self._s.add(version)
+        await self._s.flush()
+
+        if auto_activate:
+            binding.active_version_id = version.id
+            await self._s.flush()
+
+        return version
+
+    async def set_active_tone_version(
+        self, group_id: str, version_id: int
+    ) -> bool:
+        """Switch active version. Returns True if successful."""
+        # Verify the version belongs to this group
+        ver_stmt = select(PersonaToneVersion).where(
+            PersonaToneVersion.id == version_id,
+            PersonaToneVersion.group_id == group_id,
+        )
+        result = await self._s.execute(ver_stmt)
+        version = result.scalar_one_or_none()
+        if version is None:
+            return False
+
+        stmt = (
+            update(GroupPersonaBinding)
+            .where(GroupPersonaBinding.group_id == group_id)
+            .values(active_version_id=version_id)
+        )
+        await self._s.execute(stmt)
+        return True
+
+    async def set_active_tone_version_by_num(
+        self, group_id: str, version_num: int
+    ) -> bool:
+        """Switch active version by version_num. Returns True if successful."""
+        ver_stmt = select(PersonaToneVersion).where(
+            PersonaToneVersion.group_id == group_id,
+            PersonaToneVersion.version_num == version_num,
+        )
+        result = await self._s.execute(ver_stmt)
+        version = result.scalar_one_or_none()
+        if version is None:
+            return False
+        return await self.set_active_tone_version(group_id, version.id)
+
+    async def get_tone_versions(
+        self, group_id: str
+    ) -> Sequence[PersonaToneVersion]:
+        stmt = (
+            select(PersonaToneVersion)
+            .where(PersonaToneVersion.group_id == group_id)
+            .order_by(PersonaToneVersion.version_num.desc())
+        )
+        result = await self._s.execute(stmt)
+        return result.scalars().all()
+
+    async def increment_tone_message_count(self, group_id: str) -> int:
+        """Atomically increment and return the new tone_message_count."""
+        # Ensure binding exists
+        await self.get_or_create_persona_binding(group_id)
+        stmt = (
+            update(GroupPersonaBinding)
+            .where(GroupPersonaBinding.group_id == group_id)
+            .values(tone_message_count=GroupPersonaBinding.tone_message_count + 1)
+            .returning(GroupPersonaBinding.tone_message_count)
+        )
+        result = await self._s.execute(stmt)
+        return result.scalar_one()
+
+    async def reset_tone_message_count(self, group_id: str) -> None:
+        stmt = (
+            update(GroupPersonaBinding)
+            .where(GroupPersonaBinding.group_id == group_id)
+            .values(tone_message_count=0)
+        )
+        await self._s.execute(stmt)
+
+    async def update_persona_binding(
+        self,
+        group_id: str,
+        *,
+        bound_persona_id: str | None = ...,
+        is_learning_enabled: bool | None = None,
+    ) -> None:
+        values: dict[str, Any] = {}
+        if bound_persona_id is not ...:
+            values["bound_persona_id"] = bound_persona_id
+        if is_learning_enabled is not None:
+            values["is_learning_enabled"] = is_learning_enabled
+        if values:
+            stmt = (
+                update(GroupPersonaBinding)
+                .where(GroupPersonaBinding.group_id == group_id)
+                .values(**values)
+            )
+            await self._s.execute(stmt)
+
+    async def prune_old_tone_versions(
+        self, group_id: str, keep_count: int = 10
+    ) -> int:
+        """Delete old tone versions beyond keep_count. Returns deleted count."""
+        # Get all version IDs ordered by version_num desc
+        stmt = (
+            select(PersonaToneVersion.id)
+            .where(PersonaToneVersion.group_id == group_id)
+            .order_by(PersonaToneVersion.version_num.desc())
+        )
+        result = await self._s.execute(stmt)
+        all_ids = [r[0] for r in result.fetchall()]
+
+        if len(all_ids) <= keep_count:
+            return 0
+
+        # Get the binding to check active_version_id
+        binding_stmt = select(GroupPersonaBinding).where(GroupPersonaBinding.group_id == group_id)
+        binding_result = await self._s.execute(binding_stmt)
+        binding = binding_result.scalar_one_or_none()
+        active_id = binding.active_version_id if binding else None
+
+        to_delete = all_ids[keep_count:]
+        # Don't delete the active version
+        if active_id and active_id in to_delete:
+            to_delete.remove(active_id)
+
+        if not to_delete:
+            return 0
+
+        del_stmt = delete(PersonaToneVersion).where(PersonaToneVersion.id.in_(to_delete))
+        result = await self._s.execute(del_stmt)
+        return result.rowcount

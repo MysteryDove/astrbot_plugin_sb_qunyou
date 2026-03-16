@@ -74,11 +74,12 @@ if HAS_FASTAPI:
         total_memories: int = 0
 
 
-def create_api(db_getter) -> "FastAPI":
+def create_api(db_getter, config=None) -> "FastAPI":
     """Create the FastAPI app and mount all routes.
 
     Args:
         db_getter: callable returning the Database instance.
+        config: optional WebUIConfig for CORS origins and auth token.
     """
     if not HAS_FASTAPI:
         raise RuntimeError("FastAPI not installed — pip install fastapi uvicorn")
@@ -90,12 +91,39 @@ def create_api(db_getter) -> "FastAPI":
         redoc_url=None,
     )
 
+    cors_origins = ["http://localhost:7834", "http://127.0.0.1:7834"]
+    if config and hasattr(config, 'cors_origins'):
+        cors_origins = config.cors_origins
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=cors_origins,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Auth middleware
+    auth_token = config.auth_token if config else None
+
+    if auth_token:
+        from starlette.middleware.base import BaseHTTPMiddleware
+        from starlette.requests import Request
+        from starlette.responses import JSONResponse
+
+        class AuthMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request: Request, call_next):
+                # Skip auth for docs and OPTIONS
+                if request.url.path in ("/api/docs", "/openapi.json") or request.method == "OPTIONS":
+                    return await call_next(request)
+                # Skip auth for static files
+                if not request.url.path.startswith("/api/"):
+                    return await call_next(request)
+                auth_header = request.headers.get("authorization", "")
+                if not auth_header.startswith("Bearer ") or auth_header[7:] != auth_token:
+                    return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+                return await call_next(request)
+
+        app.add_middleware(AuthMiddleware)
 
     def _db() -> "Database":
         d = db_getter()
@@ -167,8 +195,20 @@ def create_api(db_getter) -> "FastAPI":
         db = _db()
         async with db.session() as session:
             from ..db.repo import Repository
+            from ..db.models import ActiveThread
+            from sqlalchemy import select
             repo = Repository(session)
-            threads = await repo.get_active_threads(group_id, limit=50)
+            if include_archived:
+                stmt = (
+                    select(ActiveThread)
+                    .where(ActiveThread.group_id == group_id)
+                    .order_by(ActiveThread.last_activity.desc())
+                    .limit(50)
+                )
+                result = await session.execute(stmt)
+                threads = result.scalars().all()
+            else:
+                threads = await repo.get_active_threads(group_id, limit=50)
             return [
                 ThreadResponse(
                     id=t.id,
@@ -244,6 +284,16 @@ def create_api(db_getter) -> "FastAPI":
         async with db.session() as session:
             from ..db.repo import Repository
             repo = Repository(session)
+            # Verify ownership before deleting
+            from sqlalchemy import select
+            from ..db.models import JargonTerm
+            stmt = select(JargonTerm).where(
+                JargonTerm.id == jargon_id,
+                JargonTerm.group_id == group_id,
+            )
+            result = await session.execute(stmt)
+            if result.scalar_one_or_none() is None:
+                raise HTTPException(404, "Jargon term not found in this group")
             await repo.delete_jargon(jargon_id)
             await session.commit()
         return {"ok": True}

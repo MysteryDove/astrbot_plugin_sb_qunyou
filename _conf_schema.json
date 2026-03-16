@@ -188,5 +188,37 @@
       "type": "number",
       "default": 600
     }
+  },
+  "PersonaBinding_Settings": {
+    "enabled": {
+      "description": "启用独立人格绑定与语气学习功能",
+      "type": "bool",
+      "default": true
+    },
+    "auto_learning_enabled": {
+      "description": "启用后台自动语气学习（消息积累达阈值后自动触发）",
+      "type": "bool",
+      "default": true
+    },
+    "auto_apply_learned_tone": {
+      "description": "自动将新学习的语气版本设为活跃版本（关闭则需手动切换）",
+      "type": "bool",
+      "default": true
+    },
+    "tone_learning_threshold": {
+      "description": "触发语气学习的消息累积阈值",
+      "type": "number",
+      "default": 100
+    },
+    "global_learning_cron": {
+      "description": "定时集中学习的 cron 表达式",
+      "type": "string",
+      "default": "0 3 * * *"
+    },
+    "max_tone_history_versions": {
+      "description": "每个群最多保留的语气历史版本数量",
+      "type": "number",
+      "default": 10
+    }
   }
 }

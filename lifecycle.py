@@ -51,11 +51,13 @@ class Lifecycle:
         from .services.emotion import EmotionEngine
         from .services.jargon import JargonService
         from .services.hook_handler import HookHandler
+        from .services.persona_binding import PersonaBindingService
 
         p.group_persona = GroupPersonaService(config, p.llm)
         p.speaker_memory = SpeakerMemoryService(config, p.llm)
         p.emotion = EmotionEngine(config, p.llm)
         p.jargon = JargonService(config, p.llm)
+        p.persona_binding = PersonaBindingService(config, p.llm)
         p.hook_handler = HookHandler(config, p)
 
         # Pipeline
@@ -64,9 +66,6 @@ class Lifecycle:
 
         p.debounce = DebounceManager(config.debounce, llm=p.llm)
         p.topic_router = TopicThreadRouter(config.topic, p.llm)
-
-        # Background tasks
-        p.background_tasks: set[asyncio.Task] = set()
 
         logger.info("[Lifecycle] Bootstrap complete — all services created")
 
@@ -194,7 +193,7 @@ class Lifecycle:
                 logger.warning("[Lifecycle] FastAPI not installed, WebUI disabled")
                 return
 
-            app = create_api(lambda: self._db)
+            app = create_api(lambda: self._db, config=config.webui)
 
             # Serve static frontend
             from fastapi.staticfiles import StaticFiles

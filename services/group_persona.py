@@ -70,6 +70,7 @@ class GroupPersonaService:
         """
         logger.info(f"[GroupPersona] Batch learning started for {group_id}")
 
+        job_id = None
         try:
             async with db.session() as session:
                 from ..db.repo import Repository
@@ -156,10 +157,11 @@ class GroupPersonaService:
                 f"[GroupPersona] Batch learning failed for {group_id}: {e}",
                 exc_info=True,
             )
-            try:
-                async with db.session() as session:
-                    repo = Repository(session)
-                    await repo.fail_learning_job(job_id, str(e))
-                    await session.commit()
-            except Exception:
-                pass
+            if job_id is not None:
+                try:
+                    async with db.session() as session:
+                        repo = Repository(session)
+                        await repo.fail_learning_job(job_id, str(e))
+                        await session.commit()
+                except Exception:
+                    pass
