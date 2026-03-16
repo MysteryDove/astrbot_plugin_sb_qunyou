@@ -108,6 +108,28 @@ All LLM prompts are centralized here. Injection templates use XML-style tags (`<
 - Plugin entry point: `QunyouPlugin(star.Star)` in `main.py`, exported via `__init__.py`.
 - Services use `TYPE_CHECKING` guards for circular import avoidance.
 - Repository methods follow get-or-create pattern (`get_or_create_group_profile`, etc.).
-- Background tasks tracked via `self.background_tasks: set[asyncio.Task]` with `add_done_callback(discard)`.
+- Background tasks tracked via `self.background_tasks: set[asyncio.Task]` with `_on_background_task_done` callback (logs errors, then discards).
 - Log prefix convention: `[ModuleName]` (e.g., `[Qunyou]`, `[Lifecycle]`, `[Emotion]`, `[TopicRouter]`).
 - Tests mock AstrBot internals; only pure-logic subcomponents are unit-testable without the framework.
+- DB increments use SQL-level `UPDATE ... RETURNING` for atomicity (never Python-side read-modify-write).
+- Learning job error handlers always guard `job_id` with `if job_id is not None` to avoid `UnboundLocalError`.
+- LLM prompt inputs are truncated before templating (anti prompt injection): messages ≤2000 chars, sender names ≤50 chars.
+- Cache keys use `hashlib.md5` hashes instead of text prefixes to avoid collisions.
+
+## Security
+
+- **WebUI auth**: Optional bearer token via `config.webui.auth_token`. When set, all `/api/*` endpoints require `Authorization: Bearer <token>` header. Disabled by default (`None`).
+- **CORS**: Restricted to `config.webui.cors_origins` (default: `localhost:7834` only). No wildcard.
+- **Bind address**: WebUI defaults to `127.0.0.1` (localhost only). Set `config.webui.host = "0.0.0.0"` to expose externally.
+- **Path safety**: `group_id` is sanitized via regex (`[^\w\-.]` → `_`) + `os.path.realpath` guard in LightRAG paths.
+- **Cross-group isolation**: WebUI delete endpoints verify `group_id` ownership before mutation.
+- **DSN default**: Uses placeholder `CHANGE_ME` password — must be configured before use.
+
+## Concurrency Patterns
+
+- **`_tone_learning_locks: set[str]`** — Lock is claimed (`add`) *before* any `await`, released in `finally`. Prevents duplicate concurrent tone learning per group.
+- **`_fire_and_forget(coro)`** — Creates background task with `_on_background_task_done` callback that logs exceptions. Never silently swallows errors.
+- **Jargon flush** — In-memory counters auto-flush to DB when accumulating ≥ `config.jargon.flush_threshold` words (default 500). Also flushes on shutdown.
+- **Knowledge buffer** — Global cap `INGESTION_BUFFER_GLOBAL_MAX` (1000 messages total). Oldest group buffer is force-flushed when cap is reached.
+- **Debounce sessions** — `flush_event.wait()` is wrapped in `try/except asyncio.CancelledError` to clean up orphaned sessions.
+- **Topic centroid** — Uses configurable EMA alpha (`config.topic.centroid_ema_alpha`, default 0.1) instead of `1/(count+1)` to prevent centroid freeze on long threads.
