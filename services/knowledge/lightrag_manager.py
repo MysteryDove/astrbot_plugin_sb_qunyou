@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from astrbot.api import logger
@@ -61,10 +62,17 @@ class LightRAGKnowledgeManager:
         """Whether LightRAG is available."""
         return HAS_LIGHTRAG
 
+    @staticmethod
+    def _sanitize_group_id(group_id: str) -> str:
+        """Sanitize group_id to prevent path traversal."""
+        return re.sub(r'[^\w\-.]', '_', group_id)
+
     async def _get_instance(self, group_id: str) -> Optional[Any]:
         """Get or create a LightRAG instance for a group."""
         if not HAS_LIGHTRAG:
             return None
+
+        group_id = self._sanitize_group_id(group_id)
 
         if group_id in self._instances:
             return self._instances[group_id]
@@ -75,6 +83,13 @@ class LightRAGKnowledgeManager:
                 return self._instances[group_id]
 
             working_dir = os.path.join(self._base_dir, group_id)
+            # Verify the resolved path is under base_dir to prevent traversal
+            resolved = os.path.realpath(working_dir)
+            base_resolved = os.path.realpath(self._base_dir)
+            if not resolved.startswith(base_resolved + os.sep) and resolved != base_resolved:
+                logger.error(f"[LightRAG] Path traversal attempt blocked for group_id: {group_id}")
+                return None
+
             os.makedirs(working_dir, exist_ok=True)
 
             try:
@@ -97,6 +112,7 @@ class LightRAGKnowledgeManager:
         Returns:
             True on success, False on failure.
         """
+        group_id = self._sanitize_group_id(group_id)
         if not text or not text.strip():
             return False
 
@@ -127,6 +143,7 @@ class LightRAGKnowledgeManager:
         Returns:
             Query result text, or "" on failure.
         """
+        group_id = self._sanitize_group_id(group_id)
         if not query_text or not query_text.strip():
             return ""
 

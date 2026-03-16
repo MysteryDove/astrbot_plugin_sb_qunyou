@@ -34,6 +34,7 @@ class TopicConfig(BaseModel):
     max_threads_per_group: int = 10
     summary_interval: int = 20  # 每 N 条消息更新线程摘要
     fast_model_provider_id: Optional[str] = None  # 话题感知用快速模型
+    centroid_ema_alpha: float = 0.1  # 话题向量指数移动平均 alpha (0=不更新, 1=完全替换)
 
 
 class GroupPersonaConfig(BaseModel):
@@ -64,13 +65,14 @@ class JargonConfig(BaseModel):
     min_frequency: int = 5          # 最低出现次数才入库
     batch_infer_size: int = 20      # 每批推断含义的词数
     infer_max_tokens: int = 150     # LLM 推断含义的 max_tokens
+    flush_threshold: int = 500      # 每组累计 N 个词后自动 flush 到 DB
 
 
 class DatabaseConfig(BaseModel):
     """PostgreSQL 数据库配置"""
     model_config = ConfigDict(extra="ignore")
 
-    dsn: str = "postgresql+asyncpg://postgres:password@localhost:5432/qunyou"
+    dsn: str = "postgresql+asyncpg://postgres:CHANGE_ME@localhost:5432/qunyou"
     pool_size: int = 10
     pool_min_size: int = 2
     echo: bool = False
@@ -82,7 +84,9 @@ class WebUIConfig(BaseModel):
 
     enabled: bool = True
     port: int = 7834
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
+    auth_token: Optional[str] = None  # Bearer token for API auth; None = no auth
+    cors_origins: list[str] = ["http://localhost:7834", "http://127.0.0.1:7834"]
 
 
 class KnowledgeConfig(BaseModel):

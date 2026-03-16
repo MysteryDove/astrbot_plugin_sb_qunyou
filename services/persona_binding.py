@@ -61,6 +61,7 @@ class PersonaBindingService:
         """
         logger.info(f"[PersonaBinding] Tone learning started for {group_id}")
 
+        job_id = None
         try:
             # 1. Get current active tone
             async with db.session() as session:
@@ -168,14 +169,15 @@ class PersonaBindingService:
                 f"[PersonaBinding] Tone learning failed for {group_id}: {e}",
                 exc_info=True,
             )
-            try:
-                async with db.session() as session:
-                    from ..db.repo import Repository
-                    repo = Repository(session)
-                    await repo.fail_learning_job(job_id, str(e))
-                    await session.commit()
-            except Exception:
-                pass
+            if job_id is not None:
+                try:
+                    async with db.session() as session:
+                        from ..db.repo import Repository
+                        repo = Repository(session)
+                        await repo.fail_learning_job(job_id, str(e))
+                        await session.commit()
+                except Exception:
+                    pass
 
     async def get_persona_prompt_by_id(
         self, persona_id: str, context: object

@@ -15,6 +15,7 @@ Reranker (if available) re-orders extra_parts by relevance.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from typing import Any, Optional, TYPE_CHECKING
 
 from astrbot.api import logger
@@ -240,7 +241,8 @@ class HookHandler:
             # Check cache first
             cache = self._get_cache()
             if cache:
-                cached = cache.get("context", f"jargon:{group_id}:{text[:50]}")
+                text_hash = hashlib.md5(text.encode()).hexdigest()[:12]
+                cached = cache.get("context", f"jargon:{group_id}:{text_hash}")
                 if cached is not None:
                     return cached
 
@@ -250,7 +252,8 @@ class HookHandler:
             result = "\n".join(f"「{t}」= {m}" for t, m in matches)
 
             if cache:
-                cache.set("context", f"jargon:{group_id}:{text[:50]}", result)
+                text_hash = hashlib.md5(text.encode()).hexdigest()[:12]
+                cache.set("context", f"jargon:{group_id}:{text_hash}", result)
             return result
         except Exception:
             return ""
@@ -265,7 +268,8 @@ class HookHandler:
         try:
             # Check cache first
             cache = self._get_cache()
-            cache_key = f"knowledge:{group_id}:{text[:80]}"
+            text_hash = hashlib.md5(text.encode()).hexdigest()[:12]
+            cache_key = f"knowledge:{group_id}:{text_hash}"
             if cache:
                 cached = cache.get("knowledge", cache_key)
                 if cached is not None:
@@ -316,7 +320,6 @@ class HookHandler:
                 tone=tone_text or "(尚未学习语气)",
             )
         except Exception as e:
-            from astrbot.api import logger
             logger.debug(f"[Hook] Persona binding fetch failed: {e}")
             return ""
 

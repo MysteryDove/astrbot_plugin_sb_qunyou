@@ -145,11 +145,16 @@ class Repository:
             await self._s.execute(stmt)
 
     async def increment_group_message_count(self, group_id: str) -> int:
-        """Increment and return the new message_count_since_learn."""
-        profile = await self.get_or_create_group_profile(group_id)
-        profile.message_count_since_learn += 1
-        await self._s.flush()
-        return profile.message_count_since_learn
+        """Atomically increment and return the new message_count_since_learn."""
+        await self.get_or_create_group_profile(group_id)
+        stmt = (
+            update(GroupProfile)
+            .where(GroupProfile.group_id == group_id)
+            .values(message_count_since_learn=GroupProfile.message_count_since_learn + 1)
+            .returning(GroupProfile.message_count_since_learn)
+        )
+        result = await self._s.execute(stmt)
+        return result.scalar_one()
 
     async def list_all_groups(self) -> Sequence[GroupProfile]:
         stmt = select(GroupProfile).order_by(GroupProfile.updated_at.desc())

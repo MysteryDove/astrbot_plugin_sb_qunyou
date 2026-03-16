@@ -19,6 +19,7 @@ from astrbot.api.star import Context
 from astrbot.api import logger, AstrBotConfig
 
 from .config import PluginConfig
+from .constants import INGESTION_BUFFER_GLOBAL_MAX
 from .lifecycle import Lifecycle
 
 
@@ -170,9 +171,13 @@ class QunyouPlugin(star.Star):
                     self.topic_router.route_message(group_id, msg_id, text, self.db)
                 )
 
-            # 3. Jargon word counting (in-memory, fast)
+            # 3. Jargon word counting (in-memory, fast) + periodic flush
             if self.jargon:
-                self.jargon.count_words(group_id, text)
+                total = self.jargon.count_words(group_id, text)
+                if total >= self.plugin_config.jargon.flush_threshold:
+                    self._fire_and_forget(
+                        self.jargon.flush_to_db(group_id, self.db)
+                    )
 
             # 4. Group persona: check if batch threshold reached
             if self.group_persona:
@@ -205,6 +210,16 @@ class QunyouPlugin(star.Star):
                 self.knowledge
                 and len(text.strip()) >= self.plugin_config.knowledge.min_ingestion_length
             ):
+                # Global cap: prevent unbounded memory growth
+                total_buffered = sum(len(v) for v in self._ingestion_buffer.values())
+                if total_buffered >= INGESTION_BUFFER_GLOBAL_MAX:
+                    # Force flush oldest group's buffer
+                    if self._ingestion_buffer:
+                        oldest_gid = next(iter(self._ingestion_buffer))
+                        self._fire_and_forget(
+                            self._flush_knowledge_buffer(oldest_gid)
+                        )
+
                 buf = self._ingestion_buffer.setdefault(group_id, [])
                 buf.append(text)
                 if len(buf) >= self.plugin_config.knowledge.ingestion_buffer_max:
@@ -231,15 +246,15 @@ class QunyouPlugin(star.Star):
         if self.persona_binding and self.db:
             if group_id in self._tone_learning_locks:
                 return  # already learning for this group
-            should_learn = await self.persona_binding.increment_and_check(
-                group_id, self.db
-            )
-            if should_learn:
-                self._tone_learning_locks.add(group_id)
-                try:
+            self._tone_learning_locks.add(group_id)  # Claim BEFORE await
+            try:
+                should_learn = await self.persona_binding.increment_and_check(
+                    group_id, self.db
+                )
+                if should_learn:
                     await self.persona_binding.run_tone_learning(group_id, self.db)
-                finally:
-                    self._tone_learning_locks.discard(group_id)
+            finally:
+                self._tone_learning_locks.discard(group_id)
 
     # ================================================================== #
     #  LLM Hook
@@ -502,10 +517,19 @@ class QunyouPlugin(star.Star):
     # ================================================================== #
 
     def _fire_and_forget(self, coro) -> None:
-        """Launch a background task with proper tracking."""
+        """Launch a background task with proper tracking and error logging."""
         task = asyncio.create_task(coro)
         self.background_tasks.add(task)
-        task.add_done_callback(self.background_tasks.discard)
+        task.add_done_callback(self._on_background_task_done)
+
+    def _on_background_task_done(self, task: asyncio.Task) -> None:
+        """Callback for background tasks: discard from set and log errors."""
+        self.background_tasks.discard(task)
+        if not task.cancelled() and task.exception():
+            logger.error(
+                f"[Qunyou] Background task failed: {task.exception()}",
+                exc_info=task.exception(),
+            )
 
     async def _flush_knowledge_buffer(self, group_id: str) -> None:
         """Flush buffered messages for a group through LightRAG."""

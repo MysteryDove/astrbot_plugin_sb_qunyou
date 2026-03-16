@@ -67,9 +67,6 @@ class Lifecycle:
         p.debounce = DebounceManager(config.debounce, llm=p.llm)
         p.topic_router = TopicThreadRouter(config.topic, p.llm)
 
-        # Background tasks
-        p.background_tasks: set[asyncio.Task] = set()
-
         logger.info("[Lifecycle] Bootstrap complete — all services created")
 
     # ------------------------------------------------------------------ #
@@ -196,7 +193,7 @@ class Lifecycle:
                 logger.warning("[Lifecycle] FastAPI not installed, WebUI disabled")
                 return
 
-            app = create_api(lambda: self._db)
+            app = create_api(lambda: self._db, config=config.webui)
 
             # Serve static frontend
             from fastapi.staticfiles import StaticFiles
