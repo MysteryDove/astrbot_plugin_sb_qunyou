@@ -1,0 +1,192 @@
+{
+  "Debounce_Settings": {
+    "mode": {
+      "description": "消息防抖模式：off=关闭, time=仅时间窗口, time_bert=时间+语义完整性",
+      "type": "string",
+      "default": "time",
+      "enum": ["off", "time", "time_bert"]
+    },
+    "time_window_seconds": {
+      "description": "时间窗口（秒）：同一用户连续消息在此间隔内会被拼接",
+      "type": "number",
+      "default": 3.0
+    },
+    "merge_separator": {
+      "description": "消息拼接分隔符",
+      "type": "string",
+      "default": "\n"
+    },
+    "enable_forward_analysis": {
+      "description": "启用合并转发/引用消息分析（仅 aiocqhttp 平台）",
+      "type": "bool",
+      "default": true
+    },
+    "enable_typing_detection": {
+      "description": "启用输入状态感知（NapCat 等支持 input_status 的平台）",
+      "type": "bool",
+      "default": true
+    },
+    "max_typing_wait": {
+      "description": "输入状态感知最大等待秒数（超时保护）",
+      "type": "number",
+      "default": 60.0
+    }
+  },
+  "Topic_Settings": {
+    "enabled": {
+      "description": "启用话题路由（解决群聊多话题并发问题）",
+      "type": "bool",
+      "default": true
+    },
+    "similarity_threshold": {
+      "description": "话题相似度阈值（0~1），低于此值创建新话题线程",
+      "type": "number",
+      "default": 0.75
+    },
+    "thread_ttl_minutes": {
+      "description": "话题线程存活时间（分钟），超时后自动归档",
+      "type": "number",
+      "default": 30
+    }
+  },
+  "GroupPersona_Settings": {
+    "batch_learning_threshold": {
+      "description": "群画像异步学习触发阈值（消息条数）",
+      "type": "number",
+      "default": 200
+    }
+  },
+  "Emotion_Settings": {
+    "enabled": {
+      "description": "启用情绪引擎",
+      "type": "bool",
+      "default": true
+    },
+    "sensitivity": {
+      "description": "情绪敏感度（0.0=极稳定, 1.0=极善变）",
+      "type": "number",
+      "default": 0.5
+    }
+  },
+  "Jargon_Settings": {
+    "enabled": {
+      "description": "启用黑话统计",
+      "type": "bool",
+      "default": true
+    },
+    "min_frequency": {
+      "description": "黑话最低出现次数",
+      "type": "number",
+      "default": 5
+    }
+  },
+  "Database_Settings": {
+    "dsn": {
+      "description": "PostgreSQL 连接字符串",
+      "type": "string",
+      "default": "postgresql+asyncpg://postgres:password@localhost:5432/qunyou"
+    }
+  },
+  "WebUI_Settings": {
+    "enabled": {
+      "description": "启用 WebUI 管理面板",
+      "type": "bool",
+      "default": true
+    },
+    "port": {
+      "description": "WebUI 端口",
+      "type": "number",
+      "default": 7834
+    }
+  },
+  "Model_Configuration": {
+    "embedding_provider_id": {
+      "description": "Embedding 模型 Provider ID（用于话题路由和记忆检索）",
+      "type": "string",
+      "default": ""
+    },
+    "main_llm_provider_id": {
+      "description": "主 LLM Provider ID（用于群画像学习、记忆抽取等深度任务）",
+      "type": "string",
+      "default": ""
+    },
+    "fast_llm_provider_id": {
+      "description": "快速 LLM Provider ID（用于话题分类、情绪识别等轻量任务）",
+      "type": "string",
+      "default": ""
+    },
+    "embedding_dim": {
+      "description": "Embedding 向量维度（BGE-M3=1024, text-embedding-3-small=1536）",
+      "type": "number",
+      "default": 1024
+    }
+  },
+  "Knowledge_Settings": {
+    "engine": {
+      "description": "知识引擎：off=关闭, lightrag=LightRAG 知识图谱",
+      "type": "string",
+      "default": "off",
+      "enum": ["off", "lightrag"]
+    },
+    "lightrag_working_dir": {
+      "description": "LightRAG 数据存储目录",
+      "type": "string",
+      "default": "./lightrag_data"
+    },
+    "query_mode": {
+      "description": "LightRAG 查询模式",
+      "type": "string",
+      "default": "hybrid",
+      "enum": ["naive", "local", "global", "hybrid"]
+    },
+    "min_ingestion_length": {
+      "description": "知识入库最小消息长度（低于此值不入库）",
+      "type": "number",
+      "default": 15
+    },
+    "ingestion_buffer_max": {
+      "description": "知识入库缓冲区最大消息数",
+      "type": "number",
+      "default": 10
+    },
+    "ingestion_cooldown": {
+      "description": "批量入库冷却秒数",
+      "type": "number",
+      "default": 60
+    }
+  },
+  "Rerank_Settings": {
+    "enabled": {
+      "description": "启用 Reranker 重排序（需要配置 Rerank Provider）",
+      "type": "bool",
+      "default": false
+    },
+    "provider_id": {
+      "description": "Rerank Provider ID（AstrBot 框架中注册的 Reranker）",
+      "type": "string",
+      "default": ""
+    },
+    "top_k": {
+      "description": "Rerank 后保留的 Top K 结果数",
+      "type": "number",
+      "default": 5
+    }
+  },
+  "Cache_Settings": {
+    "enabled": {
+      "description": "启用缓存管理器（减少重复 API 调用）",
+      "type": "bool",
+      "default": true
+    },
+    "context_ttl": {
+      "description": "上下文检索缓存 TTL（秒）",
+      "type": "number",
+      "default": 300
+    },
+    "embedding_ttl": {
+      "description": "Embedding 查询缓存 TTL（秒）",
+      "type": "number",
+      "default": 600
+    }
+  }
+}

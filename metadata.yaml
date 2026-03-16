@@ -1,6 +1,39 @@
-name: helloworld # 插件唯一识别名，以 astrbot_plugin_ 前缀开头
-display_name: helloworld # 用于展示的名字，可以是方便人类阅读的名字（需要版本 >= v4.5.0，低版本不会报错，请放心填写）
-desc: AstrBot 插件示例。 # 插件简短描述
-version: v1.3.0 # 插件版本号。格式：v1.1.1 或者 v1.1
-author: Soulter # 作者
-repo: https://github.com/Soulter/helloworld # 插件的仓库地址
+name: "astrbot_plugin_sb_qunyou"
+display_name: "群聊智能体 · 千群千面"
+description: "群聊智能体插件 — 千群千面人格、话题路由、消息防抖、发言认知、情绪引擎、黑话统计，让 AI 自然融入群组聊天。"
+version: "0.1.0"
+author: "MysteryDove"
+repo: "https://github.com/MysteryDove/astrbot_plugin_sb_qunyou"
+tags:
+  - "群聊"
+  - "千群千面"
+  - "话题路由"
+  - "消息防抖"
+  - "情绪"
+  - "黑话"
+homepage: ""
+license: "GPLv3"
+compatibility:
+  min_astrbot_version: "4.11.4"
+platforms:
+  - "aiocqhttp"
+  - "qq"
+  - "qq_official"
+  - "telegram"
+features:
+  - "千群千面：为每个群维护独立人格画像"
+  - "话题路由：多线程话题池解决鸡尾酒会问题"
+  - "消息防抖：时间窗口 + 可选语义防抖"
+  - "发言认知：用户记忆 + 向量检索"
+  - "情绪引擎：动态情绪状态机"
+  - "黑话统计：高频词自动提取与释义"
+  - "WebUI 管理面板"
+keywords:
+  - 群聊
+  - 智能体
+  - persona
+  - topic
+  - debounce
+  - emotion
+  - jargon
+  - memory

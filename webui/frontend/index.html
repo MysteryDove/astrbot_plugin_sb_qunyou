@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>群聊智能体 · 管理面板</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+<style>
+:root {
+  --bg-primary: #0f1117;
+  --bg-secondary: #1a1d27;
+  --bg-card: #1e2231;
+  --bg-hover: #252a3a;
+  --text-primary: #e8eaed;
+  --text-secondary: #9aa0b0;
+  --text-muted: #6b7280;
+  --accent-primary: #6366f1;
+  --accent-secondary: #818cf8;
+  --accent-glow: rgba(99, 102, 241, 0.15);
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --border: #2a2f3e;
+  --border-hover: #3b4255;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.3);
+  --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  display: flex;
+}
+/* ---- Sidebar ---- */
+.sidebar {
+  width: 240px;
+  min-height: 100vh;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  padding: 24px 0;
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  z-index: 10;
+}
+.sidebar-brand {
+  padding: 0 20px 24px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.sidebar-brand h1 {
+  font-size: 16px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.sidebar-brand span {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: block;
+  margin-top: 4px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: var(--transition);
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 0;
+  margin: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+.nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.nav-item.active {
+  background: var(--accent-glow);
+  color: var(--accent-secondary);
+}
+.nav-item .material-icons-round { font-size: 20px; }
+
+/* ---- Main content ---- */
+.main {
+  margin-left: 240px;
+  flex: 1;
+  padding: 32px;
+  min-height: 100vh;
+}
+.page-header {
+  margin-bottom: 28px;
+}
+.page-header h2 {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.page-header p {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+/* ---- Cards ---- */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  transition: var(--transition);
+}
+.stat-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow);
+}
+.stat-card .label {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.stat-card .value {
+  font-size: 28px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.stat-card .icon {
+  float: right;
+  font-size: 32px;
+  color: var(--accent-glow);
+  opacity: 0.6;
+}
+
+/* ---- Table ---- */
+.table-container {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th {
+  text-align: left;
+  padding: 12px 16px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+td {
+  padding: 12px 16px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--bg-hover); }
+
+/* ---- Buttons ---- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+  font-family: inherit;
+}
+.btn-primary {
+  background: var(--accent-primary);
+  color: white;
+}
+.btn-primary:hover { background: var(--accent-secondary); }
+.btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+.btn-danger:hover { background: rgba(248, 113, 113, 0.1); }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+
+/* ---- Forms ---- */
+.form-group {
+  margin-bottom: 16px;
+}
+.form-group label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+input, textarea, select {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  transition: var(--transition);
+}
+input:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+textarea { resize: vertical; min-height: 100px; }
+
+/* ---- Mood badge ---- */
+.mood-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.mood-happy    { background: rgba(52,211,153,0.15); color: var(--success); }
+.mood-excited  { background: rgba(251,191,36,0.15); color: var(--warning); }
+.mood-neutral  { background: rgba(99,102,241,0.15); color: var(--accent-secondary); }
+.mood-sad      { background: rgba(96,165,250,0.15); color: #60a5fa; }
+.mood-angry    { background: rgba(248,113,113,0.15); color: var(--danger); }
+.mood-bored    { background: rgba(156,163,175,0.15); color: #9ca3af; }
+
+/* ---- Modal ---- */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px;
+  width: 480px;
+  max-width: 90vw;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.modal h3 {
+  font-size: 18px;
+  margin-bottom: 20px;
+}
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+/* ---- Sections ---- */
+.section { display: none; }
+.section.active { display: block; }
+
+/* ---- Badge ---- */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.badge-custom { background: rgba(99,102,241,0.2); color: var(--accent-secondary); }
+.badge-auto { background: rgba(52,211,153,0.15); color: var(--success); }
+
+/* ---- Responsive ---- */
+@media (max-width: 768px) {
+  .sidebar { width: 60px; }
+  .sidebar-brand h1, .sidebar-brand span, .nav-item span { display: none; }
+  .nav-item { justify-content: center; padding: 12px; }
+  .main { margin-left: 60px; padding: 16px; }
+  .card-grid { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <h1>群聊智能体</h1>
+    <span>管理面板 v0.1</span>
+  </div>
+  <div class="nav-item active" data-section="dashboard">
+    <span class="material-icons-round">dashboard</span>
+    <span>仪表盘</span>
+  </div>
+  <div class="nav-item" data-section="groups">
+    <span class="material-icons-round">group</span>
+    <span>群管理</span>
+  </div>
+  <div class="nav-item" data-section="jargon">
+    <span class="material-icons-round">translate</span>
+    <span>黑话管理</span>
+  </div>
+  <div class="nav-item" data-section="emotion">
+    <span class="material-icons-round">mood</span>
+    <span>情绪面板</span>
+  </div>
+  <div class="nav-item" data-section="threads">
+    <span class="material-icons-round">forum</span>
+    <span>话题监控</span>
+  </div>
+</aside>
+
+<!-- Main Content -->
+<div class="main">
+
+  <!-- Dashboard -->
+  <div class="section active" id="sec-dashboard">
+    <div class="page-header">
+      <h2>仪表盘</h2>
+      <p>系统概览与核心指标</p>
+    </div>
+    <div class="card-grid" id="stats-grid">
+      <div class="stat-card">
+        <span class="material-icons-round icon">chat</span>
+        <div class="label">总消息数</div>
+        <div class="value" id="s-messages">-</div>
+      </div>
+      <div class="stat-card">
+        <span class="material-icons-round icon">groups</span>
+        <div class="label">群组数</div>
+        <div class="value" id="s-groups">-</div>
+      </div>
+      <div class="stat-card">
+        <span class="material-icons-round icon">topic</span>
+        <div class="label">活跃线程</div>
+        <div class="value" id="s-threads">-</div>
+      </div>
+      <div class="stat-card">
+        <span class="material-icons-round icon">psychology</span>
+        <div class="label">记忆条目</div>
+        <div class="value" id="s-memories">-</div>
+      </div>
+      <div class="stat-card">
+        <span class="material-icons-round icon">translate</span>
+        <div class="label">黑话词条</div>
+        <div class="value" id="s-jargon">-</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Groups -->
+  <div class="section" id="sec-groups">
+    <div class="page-header">
+      <h2>群管理</h2>
+      <p>查看和编辑群画像</p>
+    </div>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>群 ID</th>
+            <th>基础画像</th>
+            <th>学习画像</th>
+            <th>消息计数</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="groups-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Jargon -->
+  <div class="section" id="sec-jargon">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;">
+      <div>
+        <h2>黑话管理</h2>
+        <p>管理群聊高频词条与释义</p>
+      </div>
+      <button class="btn btn-primary" onclick="openJargonModal()">
+        <span class="material-icons-round" style="font-size:16px">add</span>
+        新增黑话
+      </button>
+    </div>
+    <div class="form-group" style="max-width:300px;margin-bottom:16px;">
+      <label>选择群组</label>
+      <select id="jargon-group-select" onchange="loadJargon()">
+        <option value="">选择群组...</option>
+      </select>
+    </div>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>词条</th>
+            <th>释义</th>
+            <th>频次</th>
+            <th>类型</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="jargon-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Emotion -->
+  <div class="section" id="sec-emotion">
+    <div class="page-header">
+      <h2>情绪面板</h2>
+      <p>各群组的 Bot 情绪状态</p>
+    </div>
+    <div class="card-grid" id="emotion-grid"></div>
+  </div>
+
+  <!-- Threads -->
+  <div class="section" id="sec-threads">
+    <div class="page-header">
+      <h2>话题监控</h2>
+      <p>活跃话题线程</p>
+    </div>
+    <div class="form-group" style="max-width:300px;margin-bottom:16px;">
+      <label>选择群组</label>
+      <select id="thread-group-select" onchange="loadThreads()">
+        <option value="">选择群组...</option>
+      </select>
+    </div>
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>线程 ID</th>
+            <th>话题摘要</th>
+            <th>消息数</th>
+            <th>最后活跃</th>
+          </tr>
+        </thead>
+        <tbody id="threads-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modals -->
+<div class="modal-overlay" id="group-modal">
+  <div class="modal">
+    <h3>编辑群画像</h3>
+    <input type="hidden" id="edit-group-id">
+    <div class="form-group">
+      <label>基础画像 (人工预设)</label>
+      <textarea id="edit-base-prompt" placeholder="例如：这是一个游戏讨论群，主要讨论原神相关内容..."></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('group-modal')" style="color:var(--text-secondary)">取消</button>
+      <button class="btn btn-primary" onclick="saveGroupProfile()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="jargon-modal">
+  <div class="modal">
+    <h3>新增自定义黑话</h3>
+    <div class="form-group">
+      <label>词条</label>
+      <input id="new-jargon-term" placeholder="例如：yyds">
+    </div>
+    <div class="form-group">
+      <label>释义</label>
+      <input id="new-jargon-meaning" placeholder="例如：永远的神，表示非常厉害">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('jargon-modal')" style="color:var(--text-secondary)">取消</button>
+      <button class="btn btn-primary" onclick="saveJargon()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = window.location.origin;
+let allGroups = [];
+
+// ---- Navigation ----
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    item.classList.add('active');
+    document.getElementById('sec-' + item.dataset.section).classList.add('active');
+    loadSection(item.dataset.section);
+  });
+});
+
+function loadSection(name) {
+  switch(name) {
+    case 'dashboard': loadStats(); break;
+    case 'groups': loadGroups(); break;
+    case 'jargon': populateGroupSelects(); break;
+    case 'emotion': loadEmotions(); break;
+    case 'threads': populateGroupSelects(); break;
+  }
+}
+
+// ---- API helpers ----
+async function api(path, opts = {}) {
+  try {
+    const res = await fetch(API + path, {
+      headers: { 'Content-Type': 'application/json', ...opts.headers },
+      ...opts,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch(e) {
+    console.error('API error:', e);
+    return null;
+  }
+}
+
+// ---- Dashboard ----
+async function loadStats() {
+  const d = await api('/api/stats');
+  if (!d) return;
+  document.getElementById('s-messages').textContent = d.total_messages.toLocaleString();
+  document.getElementById('s-groups').textContent = d.total_groups;
+  document.getElementById('s-threads').textContent = d.active_threads;
+  document.getElementById('s-memories').textContent = d.total_memories.toLocaleString();
+  document.getElementById('s-jargon').textContent = d.total_jargon;
+}
+
+// ---- Groups ----
+async function loadGroups() {
+  const groups = await api('/api/groups');
+  if (!groups) return;
+  allGroups = groups;
+  const tbody = document.getElementById('groups-tbody');
+  tbody.innerHTML = groups.map(g => `
+    <tr>
+      <td style="font-family:monospace;font-size:12px">${g.group_id}</td>
+      <td>${truncate(g.base_prompt, 40)}</td>
+      <td>${truncate(g.learned_prompt, 40)}</td>
+      <td>${g.message_count_since_learn}</td>
+      <td>
+        <button class="btn btn-primary btn-sm"
+          onclick="editGroup('${g.group_id}','${esc(g.base_prompt)}')">
+          编辑
+        </button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function editGroup(gid, basePrompt) {
+  document.getElementById('edit-group-id').value = gid;
+  document.getElementById('edit-base-prompt').value = basePrompt;
+  document.getElementById('group-modal').classList.add('open');
+}
+
+async function saveGroupProfile() {
+  const gid = document.getElementById('edit-group-id').value;
+  const basePrompt = document.getElementById('edit-base-prompt').value;
+  await api(`/api/groups/${gid}`, {
+    method: 'PUT',
+    body: JSON.stringify({ base_prompt: basePrompt }),
+  });
+  closeModal('group-modal');
+  loadGroups();
+}
+
+// ---- Jargon ----
+function populateGroupSelects() {
+  ['jargon-group-select', 'thread-group-select'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const val = sel.value;
+    const placeholder = sel.querySelector('option[value=""]');
+    sel.innerHTML = '';
+    if (placeholder) sel.appendChild(placeholder);
+    else {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '选择群组...';
+      sel.appendChild(opt);
+    }
+    allGroups.forEach(g => {
+      const opt = document.createElement('option');
+      opt.value = g.group_id;
+      opt.textContent = g.group_id;
+      sel.appendChild(opt);
+    });
+    if (val) sel.value = val;
+  });
+  if (!allGroups.length) {
+    api('/api/groups').then(groups => {
+      if (groups) { allGroups = groups; populateGroupSelects(); }
+    });
+  }
+}
+
+async function loadJargon() {
+  const gid = document.getElementById('jargon-group-select').value;
+  if (!gid) return;
+  const terms = await api(`/api/groups/${gid}/jargon`);
+  if (!terms) return;
+  const tbody = document.getElementById('jargon-tbody');
+  tbody.innerHTML = terms.map(t => `
+    <tr>
+      <td><strong>${t.term}</strong></td>
+      <td>${t.meaning || '<em style="color:var(--text-muted)">未推断</em>'}</td>
+      <td>${t.frequency}</td>
+      <td><span class="badge ${t.is_custom ? 'badge-custom' : 'badge-auto'}">${t.is_custom ? '自定义' : '自动'}</span></td>
+      <td>
+        <button class="btn btn-danger btn-sm" onclick="deleteJargon('${gid}', ${t.id})">删除</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openJargonModal() {
+  document.getElementById('new-jargon-term').value = '';
+  document.getElementById('new-jargon-meaning').value = '';
+  document.getElementById('jargon-modal').classList.add('open');
+}
+
+async function saveJargon() {
+  const gid = document.getElementById('jargon-group-select').value;
+  if (!gid) { alert('请先选择群组'); return; }
+  const term = document.getElementById('new-jargon-term').value.trim();
+  const meaning = document.getElementById('new-jargon-meaning').value.trim();
+  if (!term || !meaning) { alert('请填写词条和释义'); return; }
+  await api(`/api/groups/${gid}/jargon`, {
+    method: 'POST',
+    body: JSON.stringify({ term, meaning }),
+  });
+  closeModal('jargon-modal');
+  loadJargon();
+}
+
+async function deleteJargon(gid, jid) {
+  if (!confirm('确认删除？')) return;
+  await api(`/api/groups/${gid}/jargon/${jid}`, { method: 'DELETE' });
+  loadJargon();
+}
+
+// ---- Emotion ----
+const MOOD_EMOJI = {
+  happy: '😊', excited: '🤩', neutral: '😐',
+  sad: '😢', angry: '😠', bored: '😴'
+};
+
+async function loadEmotions() {
+  if (!allGroups.length) {
+    allGroups = (await api('/api/groups')) || [];
+  }
+  const grid = document.getElementById('emotion-grid');
+  grid.innerHTML = '';
+  for (const g of allGroups) {
+    const e = await api(`/api/groups/${g.group_id}/emotion`);
+    if (!e) continue;
+    grid.innerHTML += `
+      <div class="stat-card">
+        <div class="label" style="margin-bottom:12px">${g.group_id}</div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-size:36px">${MOOD_EMOJI[e.mood] || '😐'}</span>
+          <div>
+            <span class="mood-badge mood-${e.mood}">${e.mood}</span>
+            <div style="margin-top:8px;font-size:11px;color:var(--text-muted)">
+              V: ${e.valence.toFixed(2)} &nbsp; A: ${e.arousal.toFixed(2)}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  if (!allGroups.length) {
+    grid.innerHTML = '<p style="color:var(--text-muted)">暂无群组数据</p>';
+  }
+}
+
+// ---- Threads ----
+async function loadThreads() {
+  const gid = document.getElementById('thread-group-select').value;
+  if (!gid) return;
+  const threads = await api(`/api/groups/${gid}/threads`);
+  if (!threads) return;
+  const tbody = document.getElementById('threads-tbody');
+  tbody.innerHTML = threads.map(t => `
+    <tr>
+      <td style="font-family:monospace">#${t.id}</td>
+      <td>${t.topic_summary || '<em style="color:var(--text-muted)">待生成</em>'}</td>
+      <td>${t.message_count}</td>
+      <td style="font-size:12px;color:var(--text-muted)">${t.last_activity || '-'}</td>
+    </tr>
+  `).join('');
+}
+
+// ---- Modals ----
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+// ---- Helpers ----
+function truncate(s, n) {
+  if (!s) return '<em style="color:var(--text-muted)">未设定</em>';
+  return s.length > n ? s.slice(0, n) + '…' : s;
+}
+function esc(s) {
+  return (s || '').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+}
+
+// ---- Init ----
+loadStats();
+</script>
+</body>
+</html>

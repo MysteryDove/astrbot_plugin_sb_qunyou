@@ -1,0 +1,58 @@
+"""
+PostgreSQL async engine — pgvector support
+"""
+from __future__ import annotations
+
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from astrbot.api import logger
+
+from ..config import DatabaseConfig
+
+
+class Database:
+    """Manages the async SQLAlchemy engine and session factory."""
+
+    def __init__(self, config: DatabaseConfig) -> None:
+        self._config = config
+        self.engine: AsyncEngine | None = None
+        self.session_factory: async_sessionmaker[AsyncSession] | None = None
+
+    async def start(self) -> None:
+        """Create the engine, enable pgvector, and create all tables."""
+        from .models import Base  # local import to avoid circular deps
+
+        self.engine = create_async_engine(
+            self._config.dsn,
+            pool_size=self._config.pool_size,
+            echo=self._config.echo,
+            pool_pre_ping=True,
+        )
+        self.session_factory = async_sessionmaker(
+            self.engine, class_=AsyncSession, expire_on_commit=False
+        )
+
+        # Enable pgvector extension and create tables
+        async with self.engine.begin() as conn:
+            await conn.execute(
+                __import__("sqlalchemy").text("CREATE EXTENSION IF NOT EXISTS vector")
+            )
+            await conn.run_sync(Base.metadata.create_all)
+
+        logger.info("[DB] PostgreSQL engine started, tables ensured")
+
+    async def stop(self) -> None:
+        """Dispose the engine."""
+        if self.engine:
+            await self.engine.dispose()
+            logger.info("[DB] PostgreSQL engine disposed")
+
+    def session(self) -> AsyncSession:
+        """Convenience: create a new AsyncSession."""
+        if not self.session_factory:
+            raise RuntimeError("Database not started — call start() first")
+        return self.session_factory()
