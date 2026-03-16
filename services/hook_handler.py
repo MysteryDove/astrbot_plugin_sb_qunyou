@@ -20,6 +20,7 @@ from typing import Any, Optional, TYPE_CHECKING
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
+from astrbot.core.agent.message import ContentPart, TextPart
 
 from ..config import PluginConfig
 from ..prompts.templates import (
@@ -133,9 +134,10 @@ class HookHandler:
         if extra_parts:
             extra_injection = "\n\n".join(extra_parts)
             if hasattr(req, "extra_user_content_parts"):
-                if req.extra_user_content_parts is None:
-                    req.extra_user_content_parts = []
-                req.extra_user_content_parts.append(extra_injection)
+                req.extra_user_content_parts = self._normalize_extra_parts(
+                    getattr(req, "extra_user_content_parts", None)
+                )
+                req.extra_user_content_parts.append(TextPart(text=extra_injection))
 
     # ------------------------------------------------------------------ #
     #  Context fetchers (each returns str, never raises)
@@ -366,3 +368,25 @@ class HookHandler:
             return get_cache_manager()
         except Exception:
             return None
+
+    @staticmethod
+    def _normalize_extra_parts(parts: Any) -> list[ContentPart]:
+        if not parts:
+            return []
+
+        normalized: list[ContentPart] = []
+        for part in parts:
+            if isinstance(part, ContentPart):
+                normalized.append(part)
+                continue
+
+            if isinstance(part, dict):
+                try:
+                    normalized.append(ContentPart.model_validate(part))
+                    continue
+                except Exception:
+                    pass
+
+            normalized.append(TextPart(text=str(part)))
+
+        return normalized
