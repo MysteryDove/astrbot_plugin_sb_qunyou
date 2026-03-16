@@ -8,7 +8,6 @@
 """
 from __future__ import annotations
 
-import datetime as _dt
 from typing import TYPE_CHECKING
 
 from astrbot.api import logger
@@ -178,22 +177,13 @@ class PersonaBindingService:
             except Exception:
                 pass
 
-    async def get_bound_persona_prompt(
-        self, group_id: str, db: "Database", context: object
+    async def get_persona_prompt_by_id(
+        self, persona_id: str, context: object
     ) -> str | None:
-        """Retrieve the system_prompt of the bound persona from AstrBot PersonaManager.
+        """Retrieve the system_prompt of a persona from AstrBot PersonaManager.
 
-        Returns None if no persona is bound or PersonaManager unavailable.
+        Returns None if PersonaManager unavailable or persona not found.
         """
-        async with db.session() as session:
-            from ..db.repo import Repository
-            repo = Repository(session)
-            binding, _ = await repo.get_persona_binding_with_active_tone(group_id)
-
-            if not binding or not binding.bound_persona_id:
-                return None
-
-        # Retrieve persona from AstrBot framework
         try:
             injector = getattr(context, "get_injector", None)
             if injector is None:
@@ -220,20 +210,20 @@ class PersonaBindingService:
 
             # Get the persona by ID
             personas = getattr(persona_mgr, "personas", {})
-            persona = personas.get(binding.bound_persona_id)
+            persona = personas.get(persona_id)
             if persona is None:
                 # Try list-based lookup
                 persona_list = getattr(persona_mgr, "get_all", None)
                 if persona_list:
                     for p in persona_list():
                         pid = getattr(p, "id", None) or getattr(p, "name", None)
-                        if pid == binding.bound_persona_id:
+                        if pid == persona_id:
                             persona = p
                             break
 
             if persona is None:
                 logger.warning(
-                    f"[PersonaBinding] Persona '{binding.bound_persona_id}' "
+                    f"[PersonaBinding] Persona '{persona_id}' "
                     f"not found in PersonaManager"
                 )
                 return None

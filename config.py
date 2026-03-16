@@ -123,7 +123,7 @@ class PersonaBindingConfig(BaseModel):
     auto_learning_enabled: bool = True
     auto_apply_learned_tone: bool = True
     tone_learning_threshold: int = 100
-    global_learning_cron: str = "0 3 * * *"
+    global_learning_cron: str = "0 3 * * *"  # TODO: 尚未接入调度器，预留配置项
     max_tone_history_versions: int = 10
 
 

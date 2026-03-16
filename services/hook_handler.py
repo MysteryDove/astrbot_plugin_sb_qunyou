@@ -302,19 +302,19 @@ class HookHandler:
                 if not binding or not binding.bound_persona_id:
                     return ""
 
-                # Get the persona system_prompt from AstrBot
-                persona_prompt = await persona_binding_svc.get_bound_persona_prompt(
-                    group_id, db, self._p.context
-                )
+            # PersonaManager lookup — no DB needed
+            persona_prompt = await persona_binding_svc.get_persona_prompt_by_id(
+                binding.bound_persona_id, self._p.context
+            )
 
-                if not persona_prompt and not tone_text:
-                    return ""
+            if not persona_prompt and not tone_text:
+                return ""
 
-                from ..prompts.templates import INJECTION_PERSONA_BINDING
-                return INJECTION_PERSONA_BINDING.format(
-                    persona_prompt=persona_prompt or "",
-                    tone=tone_text or "(尚未学习语气)",
-                )
+            from ..prompts.templates import INJECTION_PERSONA_BINDING
+            return INJECTION_PERSONA_BINDING.format(
+                persona_prompt=persona_prompt or "",
+                tone=tone_text or "(尚未学习语气)",
+            )
         except Exception as e:
             from astrbot.api import logger
             logger.debug(f"[Hook] Persona binding fetch failed: {e}")

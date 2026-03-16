@@ -500,14 +500,8 @@ class Repository:
             return None, ""
 
         tone_text = ""
-        if binding.active_version_id is not None:
-            ver_stmt = select(PersonaToneVersion).where(
-                PersonaToneVersion.id == binding.active_version_id
-            )
-            ver_result = await self._s.execute(ver_stmt)
-            version = ver_result.scalar_one_or_none()
-            if version:
-                tone_text = version.learned_tone
+        if binding.active_version is not None:
+            tone_text = binding.active_version.learned_tone
         return binding, tone_text
 
     async def add_new_tone_version(
@@ -592,11 +586,17 @@ class Repository:
         return result.scalars().all()
 
     async def increment_tone_message_count(self, group_id: str) -> int:
-        """Increment and return the new tone_message_count."""
-        binding = await self.get_or_create_persona_binding(group_id)
-        binding.tone_message_count += 1
-        await self._s.flush()
-        return binding.tone_message_count
+        """Atomically increment and return the new tone_message_count."""
+        # Ensure binding exists
+        await self.get_or_create_persona_binding(group_id)
+        stmt = (
+            update(GroupPersonaBinding)
+            .where(GroupPersonaBinding.group_id == group_id)
+            .values(tone_message_count=GroupPersonaBinding.tone_message_count + 1)
+            .returning(GroupPersonaBinding.tone_message_count)
+        )
+        result = await self._s.execute(stmt)
+        return result.scalar_one()
 
     async def reset_tone_message_count(self, group_id: str) -> None:
         stmt = (

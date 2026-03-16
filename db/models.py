@@ -222,7 +222,7 @@ class GroupPersonaBinding(Base):
     group_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     bound_persona_id: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     active_version_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("persona_tone_versions.id", ondelete="SET NULL"), nullable=True
+        Integer, ForeignKey("persona_tone_versions.id", ondelete="SET NULL", use_alter=True), nullable=True
     )
     is_learning_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     tone_message_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

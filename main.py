@@ -44,6 +44,7 @@ class QunyouPlugin(star.Star):
         self.persona_binding = None  # PersonaBindingService
         self.background_tasks: set[asyncio.Task] = set()
         self._ingestion_buffer: dict[str, list[str]] = {}  # knowledge ingestion
+        self._tone_learning_locks: set[str] = set()  # guard against concurrent learning
 
         # Load config
         raw = config if isinstance(config, dict) else (config or {})
@@ -193,13 +194,13 @@ class QunyouPlugin(star.Star):
                     self.emotion.maybe_update(group_id, text, self.db)
                 )
 
-            # 8. Persona binding: tone learning message counter
+            # 7. Persona binding: tone learning message counter
             if self.persona_binding and self.plugin_config.persona_binding.enabled:
                 self._fire_and_forget(
                     self._check_tone_learning(group_id)
                 )
 
-            # 7. Knowledge ingestion buffer (LightRAG)
+            # 8. Knowledge ingestion buffer (LightRAG)
             if (
                 self.knowledge
                 and len(text.strip()) >= self.plugin_config.knowledge.min_ingestion_length
@@ -228,13 +229,17 @@ class QunyouPlugin(star.Star):
     async def _check_tone_learning(self, group_id: str) -> None:
         """Check if tone learning threshold is reached for persona binding."""
         if self.persona_binding and self.db:
+            if group_id in self._tone_learning_locks:
+                return  # already learning for this group
             should_learn = await self.persona_binding.increment_and_check(
                 group_id, self.db
             )
             if should_learn:
-                self._fire_and_forget(
-                    self.persona_binding.run_tone_learning(group_id, self.db)
-                )
+                self._tone_learning_locks.add(group_id)
+                try:
+                    await self.persona_binding.run_tone_learning(group_id, self.db)
+                finally:
+                    self._tone_learning_locks.discard(group_id)
 
     # ================================================================== #
     #  LLM Hook
@@ -337,6 +342,15 @@ class QunyouPlugin(star.Star):
         if not persona_id:
             yield event.plain_result("用法: /qunyou_bind <persona_id>")
             return
+
+        # Validate persona exists (best-effort, non-blocking if PersonaManager unavailable)
+        if self.persona_binding:
+            prompt = await self.persona_binding.get_persona_prompt_by_id(persona_id, self.context)
+            if prompt is None:
+                yield event.plain_result(
+                    f"警告: 未找到人格 '{persona_id}'，可能尚未注册或 PersonaManager 不可用。\n"
+                    f"仍将保存绑定，请确认人格 ID 正确。"
+                )
 
         group_id = event.get_group_id() or event.get_sender_id()
         async with self.db.session() as session:
