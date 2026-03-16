@@ -123,7 +123,7 @@ All LLM prompts are centralized here. Injection templates use XML-style tags (`<
 - **Bind address**: WebUI defaults to `127.0.0.1` (localhost only). Set `config.webui.host = "0.0.0.0"` to expose externally.
 - **Path safety**: `group_id` is sanitized via regex (`[^\w\-.]` → `_`) + `os.path.realpath` guard in LightRAG paths.
 - **Cross-group isolation**: WebUI delete endpoints verify `group_id` ownership before mutation.
-- **DSN default**: Uses placeholder `CHANGE_ME` password — must be configured before use.
+- **Database config**: No built-in DB credentials. Provide `Database_Settings.dsn` or the structured `Database_Settings.*` fields via conf before use.
 
 ## Concurrency Patterns
 

@@ -8,6 +8,7 @@ not in bootstrap() (Phase 1) when inst_map is empty.
 from __future__ import annotations
 
 import asyncio
+import datetime as _dt
 import os
 from typing import TYPE_CHECKING
 
@@ -96,6 +97,24 @@ class Lifecycle:
 
         # 3. LightRAG Knowledge Engine (lazy-init)
         self._init_knowledge(config, p)
+
+        # 3.5 Warmup LightRAG for recently active groups
+        if getattr(p, 'knowledge', None) and self._db:
+            try:
+                async with self._db.session() as session:
+                    from .db.repo import Repository
+                    repo = Repository(session)
+                    active_groups = await repo.get_recently_active_group_ids(
+                        since=_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=7),
+                        limit=config.knowledge.warmup_active_groups_limit,
+                    )
+                if active_groups:
+                    await p.knowledge.warmup(active_groups)
+                    logger.info(
+                        f"[Lifecycle] LightRAG pre-warmed {len(active_groups)} active groups"
+                    )
+            except Exception as e:
+                logger.debug(f"[Lifecycle] LightRAG warmup failed: {e}")
 
         # 4. Background retry if providers not yet available
         if not getattr(p, 'reranker', None) or (
@@ -235,6 +254,8 @@ class Lifecycle:
         knowledge = getattr(p, 'knowledge', None)
         if knowledge:
             try:
+                if hasattr(knowledge, 'finalize'):
+                    await knowledge.finalize()
                 await knowledge.close()
                 logger.info("[Lifecycle] LightRAG closed")
             except Exception as e:

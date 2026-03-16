@@ -21,6 +21,7 @@ from .models import (
     GroupPersonaBinding,
     GroupProfile,
     JargonTerm,
+    LearnedPromptReview,
     LearningJob,
     PersonaToneVersion,
     RawMessage,
@@ -160,6 +161,22 @@ class Repository:
         stmt = select(GroupProfile).order_by(GroupProfile.updated_at.desc())
         result = await self._s.execute(stmt)
         return result.scalars().all()
+
+    async def get_recently_active_group_ids(
+        self,
+        *,
+        since: _dt.datetime,
+        limit: int = 100,
+    ) -> list[str]:
+        stmt = (
+            select(RawMessage.group_id)
+            .where(RawMessage.timestamp >= since)
+            .group_by(RawMessage.group_id)
+            .order_by(func.max(RawMessage.timestamp).desc())
+            .limit(limit)
+        )
+        result = await self._s.execute(stmt)
+        return [row[0] for row in result.fetchall() if row[0]]
 
     # =====================================================================
     #  ActiveThread
@@ -479,6 +496,194 @@ class Repository:
             .values(status="failed", result={"error": error})
         )
         await self._s.execute(stmt)
+
+    # =====================================================================
+    #  LearnedPromptReview
+    # =====================================================================
+
+    async def supersede_pending_reviews(
+        self,
+        group_id: str,
+        prompt_type: str,
+    ) -> int:
+        stmt = (
+            update(LearnedPromptReview)
+            .where(
+                LearnedPromptReview.group_id == group_id,
+                LearnedPromptReview.prompt_type == prompt_type,
+                LearnedPromptReview.status == "pending",
+            )
+            .values(
+                status="superseded",
+                reviewed_at=_dt.datetime.now(_dt.timezone.utc),
+            )
+        )
+        result = await self._s.execute(stmt)
+        return result.rowcount or 0
+
+    async def create_learned_prompt_review(
+        self,
+        *,
+        group_id: str,
+        prompt_type: str,
+        old_value: str,
+        proposed_value: str,
+        change_summary: str = "",
+        metadata_json: dict | None = None,
+        target_tone_version_id: int | None = None,
+    ) -> LearnedPromptReview:
+        review = LearnedPromptReview(
+            group_id=group_id,
+            prompt_type=prompt_type,
+            status="pending",
+            old_value=old_value,
+            proposed_value=proposed_value,
+            change_summary=change_summary,
+            metadata_json=metadata_json,
+            target_tone_version_id=target_tone_version_id,
+        )
+        self._s.add(review)
+        await self._s.flush()
+        return review
+
+    async def get_learned_prompt_review(
+        self,
+        review_id: int,
+    ) -> LearnedPromptReview | None:
+        stmt = select(LearnedPromptReview).where(LearnedPromptReview.id == review_id)
+        result = await self._s.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_pending_learned_prompt_reviews(
+        self,
+        *,
+        group_id: str | None = None,
+        prompt_type: str | None = None,
+        limit: int = 50,
+    ) -> Sequence[LearnedPromptReview]:
+        stmt = select(LearnedPromptReview).where(LearnedPromptReview.status == "pending")
+        if group_id is not None:
+            stmt = stmt.where(LearnedPromptReview.group_id == group_id)
+        if prompt_type is not None:
+            stmt = stmt.where(LearnedPromptReview.prompt_type == prompt_type)
+        stmt = stmt.order_by(LearnedPromptReview.created_at.desc()).limit(limit)
+        result = await self._s.execute(stmt)
+        return result.scalars().all()
+
+    async def get_review_history(
+        self,
+        group_id: str,
+        *,
+        prompt_type: str | None = None,
+        limit: int = 50,
+    ) -> Sequence[LearnedPromptReview]:
+        stmt = select(LearnedPromptReview).where(LearnedPromptReview.group_id == group_id)
+        if prompt_type is not None:
+            stmt = stmt.where(LearnedPromptReview.prompt_type == prompt_type)
+        stmt = stmt.order_by(LearnedPromptReview.created_at.desc()).limit(limit)
+        result = await self._s.execute(stmt)
+        return result.scalars().all()
+
+    async def set_learned_prompt_review_status(
+        self,
+        review_id: int,
+        *,
+        status: str,
+        reviewed_by: str | None = None,
+        review_notes: str = "",
+        activated: bool = False,
+    ) -> bool:
+        values: dict[str, Any] = {
+            "status": status,
+            "reviewed_by": reviewed_by,
+            "review_notes": review_notes,
+            "reviewed_at": _dt.datetime.now(_dt.timezone.utc),
+        }
+        if activated:
+            values["activated_at"] = _dt.datetime.now(_dt.timezone.utc)
+        stmt = (
+            update(LearnedPromptReview)
+            .where(LearnedPromptReview.id == review_id)
+            .values(**values)
+        )
+        result = await self._s.execute(stmt)
+        return bool(result.rowcount)
+
+    async def prune_old_learned_prompt_reviews(
+        self,
+        *,
+        before: _dt.datetime,
+        statuses: Sequence[str],
+    ) -> int:
+        stmt = delete(LearnedPromptReview).where(
+            LearnedPromptReview.created_at < before,
+            LearnedPromptReview.status.in_(list(statuses)),
+        )
+        result = await self._s.execute(stmt)
+        return result.rowcount or 0
+
+    async def approve_learned_prompt_review(
+        self,
+        review_id: int,
+        *,
+        reviewed_by: str | None = None,
+        review_notes: str = "",
+        max_group_history_versions: int = 10,
+    ) -> bool:
+        review = await self.get_learned_prompt_review(review_id)
+        if review is None or review.status != "pending":
+            return False
+
+        if review.prompt_type == "group_persona":
+            profile = await self.get_or_create_group_profile(review.group_id)
+            history = profile.learned_prompt_history or []
+            if profile.learned_prompt:
+                history.append(
+                    {
+                        "prompt": profile.learned_prompt,
+                        "timestamp": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+                    }
+                )
+                history = history[-max_group_history_versions:]
+            await self.update_group_profile(
+                review.group_id,
+                learned_prompt=review.proposed_value,
+                learned_prompt_history=history,
+            )
+        elif review.prompt_type == "tone_version":
+            if review.target_tone_version_id is None:
+                return False
+            ok = await self.set_active_tone_version(review.group_id, review.target_tone_version_id)
+            if not ok:
+                return False
+        else:
+            return False
+
+        return await self.set_learned_prompt_review_status(
+            review_id,
+            status="approved",
+            reviewed_by=reviewed_by,
+            review_notes=review_notes,
+            activated=True,
+        )
+
+    async def reject_learned_prompt_review(
+        self,
+        review_id: int,
+        *,
+        reviewed_by: str | None = None,
+        review_notes: str = "",
+    ) -> bool:
+        review = await self.get_learned_prompt_review(review_id)
+        if review is None or review.status != "pending":
+            return False
+        return await self.set_learned_prompt_review_status(
+            review_id,
+            status="rejected",
+            reviewed_by=reviewed_by,
+            review_notes=review_notes,
+            activated=False,
+        )
 
     # =====================================================================
     #  GroupPersonaBinding & PersonaToneVersion

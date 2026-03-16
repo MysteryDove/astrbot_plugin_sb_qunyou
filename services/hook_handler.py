@@ -278,6 +278,7 @@ class HookHandler:
             result = await knowledge.query(
                 group_id, text,
                 mode=self._config.knowledge.query_mode,
+                retrieval_only=self._config.knowledge.retrieval_only_query_preferred,
             )
 
             if cache and result:

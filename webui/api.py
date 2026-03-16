@@ -73,6 +73,45 @@ if HAS_FASTAPI:
         total_jargon: int = 0
         total_memories: int = 0
 
+    class ReviewResponse(APIModel):
+        id: int
+        group_id: str
+        prompt_type: str
+        status: str
+        old_value: str
+        proposed_value: str
+        change_summary: str
+        metadata_json: Optional[dict] = None
+        target_tone_version_id: Optional[int] = None
+        reviewed_by: Optional[str] = None
+        review_notes: str = ""
+        created_at: Optional[str] = None
+        reviewed_at: Optional[str] = None
+        activated_at: Optional[str] = None
+
+    class ReviewDecision(APIModel):
+        reviewed_by: Optional[str] = None
+        review_notes: str = ""
+
+
+def _to_review_response(review) -> "ReviewResponse":
+    return ReviewResponse(
+        id=review.id,
+        group_id=review.group_id,
+        prompt_type=review.prompt_type,
+        status=review.status,
+        old_value=review.old_value,
+        proposed_value=review.proposed_value,
+        change_summary=review.change_summary,
+        metadata_json=review.metadata_json,
+        target_tone_version_id=review.target_tone_version_id,
+        reviewed_by=review.reviewed_by,
+        review_notes=review.review_notes,
+        created_at=str(review.created_at) if review.created_at else None,
+        reviewed_at=str(review.reviewed_at) if review.reviewed_at else None,
+        activated_at=str(review.activated_at) if review.activated_at else None,
+    )
+
 
 def create_api(db_getter, config=None) -> "FastAPI":
     """Create the FastAPI app and mount all routes.
@@ -360,5 +399,63 @@ def create_api(db_getter, config=None) -> "FastAPI":
                 total_jargon=total_jargon,
                 total_memories=total_memories,
             )
+
+    # ------------------------------------------------------------------ #
+    #  Reviews
+    # ------------------------------------------------------------------ #
+
+    @app.get("/api/reviews/pending", response_model=list[ReviewResponse])
+    async def list_pending_reviews(group_id: str | None = None, prompt_type: str | None = None, limit: int = 50):
+        db = _db()
+        async with db.session() as session:
+            from ..db.repo import Repository
+            repo = Repository(session)
+            reviews = await repo.get_pending_learned_prompt_reviews(
+                group_id=group_id,
+                prompt_type=prompt_type,
+                limit=limit,
+            )
+            return [_to_review_response(review) for review in reviews]
+
+    @app.get("/api/reviews/history/{group_id}", response_model=list[ReviewResponse])
+    async def get_review_history(group_id: str, prompt_type: str | None = None, limit: int = 50):
+        db = _db()
+        async with db.session() as session:
+            from ..db.repo import Repository
+            repo = Repository(session)
+            reviews = await repo.get_review_history(group_id, prompt_type=prompt_type, limit=limit)
+            return [_to_review_response(review) for review in reviews]
+
+    @app.post("/api/reviews/{review_id}/approve")
+    async def approve_review(review_id: int, body: ReviewDecision):
+        db = _db()
+        async with db.session() as session:
+            from ..db.repo import Repository
+            repo = Repository(session)
+            ok = await repo.approve_learned_prompt_review(
+                review_id,
+                reviewed_by=body.reviewed_by,
+                review_notes=body.review_notes,
+            )
+            await session.commit()
+        if not ok:
+            raise HTTPException(404, "Review not found or cannot be approved")
+        return {"ok": True}
+
+    @app.post("/api/reviews/{review_id}/reject")
+    async def reject_review(review_id: int, body: ReviewDecision):
+        db = _db()
+        async with db.session() as session:
+            from ..db.repo import Repository
+            repo = Repository(session)
+            ok = await repo.reject_learned_prompt_review(
+                review_id,
+                reviewed_by=body.reviewed_by,
+                review_notes=body.review_notes,
+            )
+            await session.commit()
+        if not ok:
+            raise HTTPException(404, "Review not found or cannot be rejected")
+        return {"ok": True}
 
     return app

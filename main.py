@@ -45,6 +45,7 @@ class QunyouPlugin(star.Star):
         self.persona_binding = None  # PersonaBindingService
         self.background_tasks: set[asyncio.Task] = set()
         self._ingestion_buffer: dict[str, list[str]] = {}  # knowledge ingestion
+        self._ingestion_tasks: dict[str, asyncio.Task] = {}
         self._tone_learning_locks: set[str] = set()  # guard against concurrent learning
 
         # Load config
@@ -77,6 +78,8 @@ class QunyouPlugin(star.Star):
         # Flush debounce buffer
         if self.debounce:
             await self.debounce.flush_all()
+        if self._ingestion_tasks:
+            await asyncio.gather(*list(self._ingestion_tasks.values()), return_exceptions=True)
         # Flush jargon counters
         if self.jargon and self.db:
             try:
@@ -216,16 +219,12 @@ class QunyouPlugin(star.Star):
                     # Force flush oldest group's buffer
                     if self._ingestion_buffer:
                         oldest_gid = next(iter(self._ingestion_buffer))
-                        self._fire_and_forget(
-                            self._flush_knowledge_buffer(oldest_gid)
-                        )
+                        self._schedule_knowledge_flush(oldest_gid)
 
                 buf = self._ingestion_buffer.setdefault(group_id, [])
                 buf.append(text)
                 if len(buf) >= self.plugin_config.knowledge.ingestion_buffer_max:
-                    self._fire_and_forget(
-                        self._flush_knowledge_buffer(group_id)
-                    )
+                    self._schedule_knowledge_flush(group_id)
 
         except Exception as e:
             logger.error(f"[Qunyou] Message processing error: {e}", exc_info=True)
@@ -512,6 +511,106 @@ class QunyouPlugin(star.Star):
 
         yield event.plain_result(f"语气学习已{'开启' if enabled else '关闭'}")
 
+    @filter.command("qunyou_review_pending")
+    @filter.permission_type(PermissionType.ADMIN)
+    async def review_pending_command(self, event: AstrMessageEvent):
+        """查看当前群待审核学习记录"""
+        if not self.db:
+            yield event.plain_result("数据库未连接")
+            return
+
+        group_id = event.get_group_id() or event.get_sender_id()
+        async with self.db.session() as session:
+            from .db.repo import Repository
+            repo = Repository(session)
+            reviews = await repo.get_pending_learned_prompt_reviews(group_id=group_id, limit=10)
+
+        if not reviews:
+            yield event.plain_result("当前群暂无待审核学习记录")
+            return
+
+        parts = [f"🧾 待审核学习记录 [{group_id}]"]
+        for review in reviews:
+            parts.append(
+                f"#{review.id} {review.prompt_type} - {review.created_at.strftime('%m-%d %H:%M')}"
+            )
+            if review.change_summary:
+                parts.append(f"  {review.change_summary[:120]}")
+        yield event.plain_result("\n".join(parts))
+
+    @filter.command("qunyou_review_approve")
+    @filter.permission_type(PermissionType.ADMIN)
+    async def review_approve_command(self, event: AstrMessageEvent):
+        """批准学习记录: /qunyou_review_approve <review_id> [notes]"""
+        if not self.db:
+            yield event.plain_result("数据库未连接")
+            return
+
+        text = event.message_str.strip()
+        parts = text.split(maxsplit=1)
+        try:
+            review_id = int(parts[0]) if parts else 0
+        except ValueError:
+            yield event.plain_result("用法: /qunyou_review_approve <review_id> [notes]")
+            return
+
+        if review_id <= 0:
+            yield event.plain_result("用法: /qunyou_review_approve <review_id> [notes]")
+            return
+
+        notes = parts[1] if len(parts) > 1 else ""
+        async with self.db.session() as session:
+            from .db.repo import Repository
+            repo = Repository(session)
+            ok = await repo.approve_learned_prompt_review(
+                review_id,
+                reviewed_by=event.get_sender_id(),
+                review_notes=notes,
+                max_group_history_versions=self.plugin_config.group_persona.max_history_versions,
+            )
+            await session.commit()
+
+        if ok:
+            yield event.plain_result(f"已批准学习记录 #{review_id}")
+        else:
+            yield event.plain_result(f"学习记录 #{review_id} 不存在、已处理，或无法批准")
+
+    @filter.command("qunyou_review_reject")
+    @filter.permission_type(PermissionType.ADMIN)
+    async def review_reject_command(self, event: AstrMessageEvent):
+        """拒绝学习记录: /qunyou_review_reject <review_id> [notes]"""
+        if not self.db:
+            yield event.plain_result("数据库未连接")
+            return
+
+        text = event.message_str.strip()
+        parts = text.split(maxsplit=1)
+        try:
+            review_id = int(parts[0]) if parts else 0
+        except ValueError:
+            yield event.plain_result("用法: /qunyou_review_reject <review_id> [notes]")
+            return
+
+        if review_id <= 0:
+            yield event.plain_result("用法: /qunyou_review_reject <review_id> [notes]")
+            return
+
+        notes = parts[1] if len(parts) > 1 else ""
+        async with self.db.session() as session:
+            from .db.repo import Repository
+            repo = Repository(session)
+            ok = await repo.reject_learned_prompt_review(
+                review_id,
+                reviewed_by=event.get_sender_id(),
+                review_notes=notes,
+            )
+            await session.commit()
+
+        if ok:
+            yield event.plain_result(f"已拒绝学习记录 #{review_id}")
+        else:
+            yield event.plain_result(f"学习记录 #{review_id} 不存在、已处理，或无法拒绝")
+
     # ================================================================== #
     #  Utility
     # ================================================================== #
@@ -530,6 +629,19 @@ class QunyouPlugin(star.Star):
                 f"[Qunyou] Background task failed: {task.exception()}",
                 exc_info=task.exception(),
             )
+
+    def _schedule_knowledge_flush(self, group_id: str) -> None:
+        if group_id in self._ingestion_tasks:
+            return
+        task = asyncio.create_task(self._flush_knowledge_buffer(group_id))
+        self._ingestion_tasks[group_id] = task
+        self.background_tasks.add(task)
+
+        def _on_done(done_task: asyncio.Task, gid: str = group_id) -> None:
+            self._ingestion_tasks.pop(gid, None)
+            self._on_background_task_done(done_task)
+
+        task.add_done_callback(_on_done)
 
     async def _flush_knowledge_buffer(self, group_id: str) -> None:
         """Flush buffered messages for a group through LightRAG."""

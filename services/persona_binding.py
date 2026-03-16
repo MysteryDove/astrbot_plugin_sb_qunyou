@@ -134,12 +134,30 @@ class PersonaBindingService:
             async with db.session() as session:
                 repo = Repository(session)
 
-                auto_activate = self._config.auto_apply_learned_tone
+                review_enabled = self._global_config.review_gate.enabled_for_tone
+                auto_activate = self._config.auto_apply_learned_tone and not review_enabled
                 version = await repo.add_new_tone_version(
                     group_id,
                     learned_tone=new_tone.strip(),
                     auto_activate=auto_activate,
                 )
+
+                review_id = None
+                if review_enabled:
+                    await repo.supersede_pending_reviews(group_id, "tone_version")
+                    review = await repo.create_learned_prompt_review(
+                        group_id=group_id,
+                        prompt_type="tone_version",
+                        old_value=current_tone,
+                        proposed_value=new_tone.strip(),
+                        change_summary="语气学习生成了新的版本，等待管理员审核后激活。",
+                        metadata_json={
+                            "version_num": version.version_num,
+                            "tone_length": len(new_tone),
+                        },
+                        target_tone_version_id=version.id,
+                    )
+                    review_id = review.id
 
                 await repo.reset_tone_message_count(group_id)
 
@@ -154,15 +172,23 @@ class PersonaBindingService:
                         "version_num": version.version_num,
                         "tone_length": len(new_tone),
                         "auto_activated": auto_activate,
+                        "review_required": review_enabled,
+                        "review_id": review_id,
                         "pruned_versions": pruned,
                     },
                 )
                 await session.commit()
 
-            logger.info(
-                f"[PersonaBinding] Tone learning completed for {group_id}, "
-                f"version={version.version_num}, auto_activated={auto_activate}"
-            )
+            if review_enabled:
+                logger.info(
+                    f"[PersonaBinding] Tone learning created pending review for {group_id}, "
+                    f"version={version.version_num}"
+                )
+            else:
+                logger.info(
+                    f"[PersonaBinding] Tone learning completed for {group_id}, "
+                    f"version={version.version_num}, auto_activated={auto_activate}"
+                )
 
         except Exception as e:
             logger.error(

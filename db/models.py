@@ -214,7 +214,48 @@ class LearningJob(Base):
 
 
 # ---------------------------------------------------------------------------
-# 10. group_persona_bindings — 群组人格绑定 (独立链路)
+# 10. learned_prompt_reviews — 学习提示词审核记录
+# ---------------------------------------------------------------------------
+class LearnedPromptReview(Base):
+    __tablename__ = "learned_prompt_reviews"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    group_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    prompt_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    old_value: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    proposed_value: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    change_summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    metadata_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    target_tone_version_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("persona_tone_versions.id", ondelete="SET NULL", use_alter=True),
+        nullable=True,
+    )
+    reviewed_by: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    review_notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[_dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    reviewed_at: Mapped[Optional[_dt.datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    activated_at: Mapped[Optional[_dt.datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    target_tone_version: Mapped[Optional["PersonaToneVersion"]] = relationship(
+        foreign_keys=[target_tone_version_id], lazy="joined"
+    )
+
+    __table_args__ = (
+        Index("ix_lpr_group_status", "group_id", "status"),
+        Index("ix_lpr_group_type_status", "group_id", "prompt_type", "status"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 11. group_persona_bindings — 群组人格绑定 (独立链路)
 # ---------------------------------------------------------------------------
 class GroupPersonaBinding(Base):
     __tablename__ = "group_persona_bindings"
@@ -243,7 +284,7 @@ class GroupPersonaBinding(Base):
 
 
 # ---------------------------------------------------------------------------
-# 11. persona_tone_versions — 人格语气版本记录
+# 12. persona_tone_versions — 人格语气版本记录
 # ---------------------------------------------------------------------------
 class PersonaToneVersion(Base):
     __tablename__ = "persona_tone_versions"
