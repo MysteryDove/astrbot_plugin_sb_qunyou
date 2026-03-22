@@ -34,7 +34,7 @@ class TopicConfig(BaseModel):
     thread_ttl_minutes: int = 30
     max_threads_per_group: int = 10
     summary_interval: int = 20  # 每 N 条消息更新线程摘要
-    fast_model_provider_id: Optional[str] = None  # 话题感知用快速模型
+    fast_model_provider_id: Optional[str] = None  # 线程摘要专用快速模型；留空时使用全局快速模型
     centroid_ema_alpha: float = 0.1  # 话题向量指数移动平均 alpha (0=不更新, 1=完全替换)
 
 
@@ -134,6 +134,8 @@ class WebUIConfig(BaseModel):
     port: int = 7834
     host: str = "127.0.0.1"
     auth_token: Optional[str] = None  # Bearer token for API auth; None = no auth
+    web_token_ttl_seconds: int = 600  # WebToken expiry in seconds (10 minutes)
+    session_token_ttl_days: int = 30  # SessionToken expiry in days
     cors_origins: list[str] = ["http://localhost:7834", "http://127.0.0.1:7834"]
 
 
@@ -176,7 +178,6 @@ class PersonaBindingConfig(BaseModel):
     enabled: bool = True
     auto_learning_enabled: bool = True
     auto_apply_learned_tone: bool = True
-    tone_learning_threshold: int = 100
     global_learning_cron: str = "0 3 * * *"  # TODO: 尚未接入调度器，预留配置项
     max_tone_history_versions: int = 10
 
@@ -213,10 +214,10 @@ class PluginConfig(BaseModel):
     persona_binding: PersonaBindingConfig = Field(default_factory=PersonaBindingConfig)
     review_gate: ReviewGateConfig = Field(default_factory=ReviewGateConfig)
 
-    # 全局 LLM Provider ID
-    embedding_provider_id: Optional[str] = None    # 向量 embedding 模型
-    main_llm_provider_id: Optional[str] = None     # 主回复/深度分析模型
-    fast_llm_provider_id: Optional[str] = None     # 快速分析/分类模型
+    # 全局模型 Provider ID
+    embedding_provider_id: Optional[str] = None    # embedding：话题路由、消息向量、用户记忆检索
+    main_llm_provider_id: Optional[str] = None     # 主 LLM：群画像学习、每群人格学习
+    fast_llm_provider_id: Optional[str] = None     # 快速 LLM：记忆抽取、情绪/黑话/防抖/线程摘要
 
     # 向量维度 (取决于 embedding 模型, BGE-M3 = 1024)
     embedding_dim: int = 1024
@@ -242,6 +243,14 @@ class PluginConfig(BaseModel):
         persona_binding_raw = raw.get("PersonaBinding_Settings", {})
         review_gate_raw = raw.get("ReviewGate_Settings", {})
 
+        def _optional_str(value: object) -> Optional[str]:
+            if value is None:
+                return None
+            if isinstance(value, str):
+                value = value.strip()
+                return value or None
+            return str(value)
+
         return cls(
             debounce=DebounceConfig(**debounce_raw) if debounce_raw else DebounceConfig(),
             topic=TopicConfig(**topic_raw) if topic_raw else TopicConfig(),
@@ -255,8 +264,8 @@ class PluginConfig(BaseModel):
             cache=CacheConfig(**cache_raw) if cache_raw else CacheConfig(),
             persona_binding=PersonaBindingConfig(**persona_binding_raw) if persona_binding_raw else PersonaBindingConfig(),
             review_gate=ReviewGateConfig(**review_gate_raw) if review_gate_raw else ReviewGateConfig(),
-            embedding_provider_id=model_raw.get("embedding_provider_id"),
-            main_llm_provider_id=model_raw.get("main_llm_provider_id"),
-            fast_llm_provider_id=model_raw.get("fast_llm_provider_id"),
+            embedding_provider_id=_optional_str(model_raw.get("embedding_provider_id")),
+            main_llm_provider_id=_optional_str(model_raw.get("main_llm_provider_id")),
+            fast_llm_provider_id=_optional_str(model_raw.get("fast_llm_provider_id")),
             embedding_dim=model_raw.get("embedding_dim", 1024),
         )
