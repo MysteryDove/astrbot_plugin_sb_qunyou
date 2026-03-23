@@ -70,6 +70,14 @@ class HookHandler:
         self._prompts: Any = None  # lazy, set on first handle()
         self._ctx: Any = None  # lazy, set on first handle()
 
+    def _debug_enabled(self) -> bool:
+        return bool(getattr(getattr(self._config, "debug", None), "enabled", False))
+
+    def _debug_print(self, title: str, details: str) -> None:
+        if not self._debug_enabled():
+            return
+        print(f"[HookDebug] {title}\n{details}")
+
     def _record_slot_status(self, group_id: str, system_prompt: str) -> None:
         slot_found = bool(system_prompt and _PERSONA_SLOT_RE.search(system_prompt))
         status_map = getattr(self._p, "_prompt_slot_status", None)
@@ -275,16 +283,35 @@ class HookHandler:
         try:
             speaker_mem = getattr(self._p, "speaker_memory", None)
             if not speaker_mem:
+                self._debug_print(
+                    "Memory Search",
+                    f"group_id={group_id}\nuser_id={user_id}\nquery={text}\nstatus=speaker_memory_unavailable",
+                )
                 return ""
 
             facts = await speaker_mem.retrieve_relevant(
                 group_id, user_id, text, db
             )
             if not facts:
+                self._debug_print(
+                    "Memory Search",
+                    f"group_id={group_id}\nuser_id={user_id}\nquery={text}\nstatus=no_hits",
+                )
                 return ""
 
+            self._debug_print(
+                "Memory Search",
+                (
+                    f"group_id={group_id}\nuser_id={user_id}\nquery={text}\n"
+                    f"hits={len(facts)}\ncontent=\n" + "\n".join(facts)
+                ),
+            )
             return "\n".join(f"- {f}" for f in facts)
-        except Exception:
+        except Exception as e:
+            self._debug_print(
+                "Memory Search",
+                f"group_id={group_id}\nuser_id={user_id}\nquery={text}\nstatus=error\nerror={e}",
+            )
             return ""
 
     async def _fetch_jargon(self, group_id: str, text: str, db: Any) -> str:
@@ -317,6 +344,10 @@ class HookHandler:
         """Query LightRAG knowledge graph for relevant context."""
         knowledge = getattr(self._p, "knowledge", None)
         if not knowledge:
+            self._debug_print(
+                "RAG Search",
+                f"group_id={group_id}\nquery={text}\nstatus=knowledge_unavailable",
+            )
             return ""
         try:
             # Check cache first
@@ -326,6 +357,10 @@ class HookHandler:
             if cache:
                 cached = cache.get("knowledge", cache_key)
                 if cached is not None:
+                    self._debug_print(
+                        "RAG Search",
+                        f"group_id={group_id}\nquery={text}\nsource=cache\ncontent=\n{cached or '(empty)'}",
+                    )
                     return cached
 
             result = await knowledge.query(
@@ -334,10 +369,21 @@ class HookHandler:
                 retrieval_only=self._config.knowledge.retrieval_only_query_preferred,
             )
 
+            self._debug_print(
+                "RAG Search",
+                (
+                    f"group_id={group_id}\nquery={text}\nsource=query\n"
+                    f"status={'hit' if result else 'no_hits'}\ncontent=\n{result or '(empty)'}"
+                ),
+            )
             if cache and result:
                 cache.set("knowledge", cache_key, result)
             return result
         except Exception as e:
+            self._debug_print(
+                "RAG Search",
+                f"group_id={group_id}\nquery={text}\nstatus=error\nerror={e}",
+            )
             logger.debug(f"[Hook] Knowledge fetch failed: {e}")
             return ""
 

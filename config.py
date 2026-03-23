@@ -139,6 +139,13 @@ class WebUIConfig(BaseModel):
     cors_origins: list[str] = ["http://localhost:7834", "http://127.0.0.1:7834"]
 
 
+class DebugConfig(BaseModel):
+    """调试输出配置"""
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
+
+
 class KnowledgeConfig(BaseModel):
     """知识引擎配置 (LightRAG)"""
     model_config = ConfigDict(extra="ignore")
@@ -208,6 +215,7 @@ class PluginConfig(BaseModel):
     jargon: JargonConfig = Field(default_factory=JargonConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     webui: WebUIConfig = Field(default_factory=WebUIConfig)
+    debug: DebugConfig = Field(default_factory=DebugConfig)
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
     rerank: RerankConfig = Field(default_factory=RerankConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
@@ -236,6 +244,7 @@ class PluginConfig(BaseModel):
         jargon_raw = raw.get("Jargon_Settings", {})
         db_raw = raw.get("Database_Settings", {})
         webui_raw = raw.get("WebUI_Settings", {})
+        debug_raw = raw.get("Debug_Settings", {})
         model_raw = raw.get("Model_Configuration", {})
         knowledge_raw = raw.get("Knowledge_Settings", {})
         rerank_raw = raw.get("Rerank_Settings", {})
@@ -259,6 +268,7 @@ class PluginConfig(BaseModel):
             jargon=JargonConfig(**jargon_raw) if jargon_raw else JargonConfig(),
             database=DatabaseConfig(**db_raw) if db_raw else DatabaseConfig(),
             webui=WebUIConfig(**webui_raw) if webui_raw else WebUIConfig(),
+            debug=DebugConfig(**debug_raw) if debug_raw else DebugConfig(),
             knowledge=KnowledgeConfig(**knowledge_raw) if knowledge_raw else KnowledgeConfig(),
             rerank=RerankConfig(**rerank_raw) if rerank_raw else RerankConfig(),
             cache=CacheConfig(**cache_raw) if cache_raw else CacheConfig(),

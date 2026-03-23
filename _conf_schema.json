@@ -252,14 +252,23 @@
       }
     }
   },
+  "Debug_Settings": {
+    "type": "object",
+    "items": {
+      "enabled": {
+        "description": "调试模式：开启后详细打印记忆检索与 RAG 检索命中的内容",
+        "type": "bool",
+        "default": false
+      }
+    }
+  },
   "Model_Configuration": {
     "type": "object",
     "items": {
       "embedding_provider_id": {
-        "description": "Embedding Provider（用于话题路由、消息向量与记忆检索）",
+        "description": "Embedding Provider ID（手动填写 AstrBot 中的 provider id，用于话题路由、消息向量与记忆检索）",
         "type": "string",
-        "default": "",
-        "_special": "select_provider"
+        "default": ""
       },
       "main_llm_provider_id": {
         "description": "主 LLM Provider（用于群画像学习、每群人格学习）",

@@ -80,6 +80,8 @@ class QunyouPlugin(star.Star):
         if self.debounce:
             await self.debounce.flush_all()
         if self._ingestion_tasks:
+            for task in list(self._ingestion_tasks.values()):
+                task.cancel()
             await asyncio.gather(*list(self._ingestion_tasks.values()), return_exceptions=True)
         # Flush jargon counters
         if self.jargon and self.db:
@@ -220,11 +222,13 @@ class QunyouPlugin(star.Star):
                     # Force flush oldest group's buffer
                     if self._ingestion_buffer:
                         oldest_gid = next(iter(self._ingestion_buffer))
-                        self._schedule_knowledge_flush(oldest_gid)
+                        self._schedule_knowledge_flush(oldest_gid, force=True)
 
                 buf = self._ingestion_buffer.setdefault(group_id, [])
                 buf.append(text)
                 if len(buf) >= self.plugin_config.knowledge.ingestion_buffer_max:
+                    self._schedule_knowledge_flush(group_id, force=True)
+                else:
                     self._schedule_knowledge_flush(group_id)
 
         except Exception as e:
@@ -455,21 +459,47 @@ class QunyouPlugin(star.Star):
                 exc_info=task.exception(),
             )
 
-    def _schedule_knowledge_flush(self, group_id: str) -> None:
-        if group_id in self._ingestion_tasks:
-            return
-        task = asyncio.create_task(self._flush_knowledge_buffer(group_id))
+    def _schedule_knowledge_flush(self, group_id: str, *, force: bool = False) -> None:
+        existing_task = self._ingestion_tasks.get(group_id)
+        if existing_task is not None:
+            if getattr(existing_task, "_qunyou_sleeping", False):
+                existing_task.cancel()
+            else:
+                return
+
+        delay_seconds = 0.0 if force else max(
+            float(self.plugin_config.knowledge.ingestion_cooldown),
+            0.0,
+        )
+        task = asyncio.create_task(
+            self._flush_knowledge_buffer(group_id, delay_seconds=delay_seconds)
+        )
+        setattr(task, "_qunyou_sleeping", delay_seconds > 0)
         self._ingestion_tasks[group_id] = task
         self.background_tasks.add(task)
 
         def _on_done(done_task: asyncio.Task, gid: str = group_id) -> None:
-            self._ingestion_tasks.pop(gid, None)
+            if self._ingestion_tasks.get(gid) is done_task:
+                self._ingestion_tasks.pop(gid, None)
             self._on_background_task_done(done_task)
+            buffered = self._ingestion_buffer.get(gid) or []
+            if not done_task.cancelled() and self.knowledge and buffered:
+                self._schedule_knowledge_flush(
+                    gid,
+                    force=len(buffered) >= self.plugin_config.knowledge.ingestion_buffer_max,
+                )
 
         task.add_done_callback(_on_done)
 
-    async def _flush_knowledge_buffer(self, group_id: str) -> None:
+    async def _flush_knowledge_buffer(self, group_id: str, *, delay_seconds: float = 0.0) -> None:
         """Flush buffered messages for a group through LightRAG."""
+        if delay_seconds > 0:
+            await asyncio.sleep(delay_seconds)
+
+        current_task = asyncio.current_task()
+        if current_task is not None:
+            setattr(current_task, "_qunyou_sleeping", False)
+
         texts = self._ingestion_buffer.pop(group_id, [])
         if not texts or not self.knowledge:
             return

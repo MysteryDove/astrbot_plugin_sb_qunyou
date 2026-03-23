@@ -40,6 +40,16 @@ class FakeContextBuilder:
         return f"<user_memories user=\"{user_id}\" trust=\"medium\">\n{memory_lines}\n</user_memories>"
 
 
+class FakeSpeakerMemory:
+    async def retrieve_relevant(self, group_id, user_id, text, db):
+        return ["喜欢测试", "经常讨论注入链路"]
+
+
+class FakeKnowledge:
+    async def query(self, group_id, text, **kwargs):
+        return "命中知识：这里是 RAG 上下文"
+
+
 # -------------------------------------------------------------------------- #
 #  Unit tests for _rewrite_system_prompt
 # -------------------------------------------------------------------------- #
@@ -226,3 +236,29 @@ async def test_handle_records_runtime_slot_status():
     assert status["has_persona_slot"] is True
     assert status["system_prompt_length"] == len(req.system_prompt)
 
+
+@pytest.mark.asyncio
+async def test_fetch_memories_and_knowledge_print_debug(monkeypatch):
+    printed: list[str] = []
+
+    def fake_print(*args, **kwargs):
+        printed.append(" ".join(str(a) for a in args))
+
+    monkeypatch.setattr("builtins.print", fake_print)
+
+    config = PluginConfig()
+    config.debug.enabled = True
+    plugin = SimpleNamespace(
+        speaker_memory=FakeSpeakerMemory(),
+        knowledge=FakeKnowledge(),
+    )
+    handler = HookHandler(config, plugin)
+    handler._get_cache = lambda: None
+
+    memories = await handler._fetch_memories("g1", "u1", "我最近在做测试", object())
+    knowledge = await handler._fetch_knowledge("g1", "给我看看 RAG")
+
+    assert "喜欢测试" in memories
+    assert knowledge == "命中知识：这里是 RAG 上下文"
+    assert any("Memory Search" in message and "喜欢测试" in message for message in printed)
+    assert any("RAG Search" in message and "命中知识" in message for message in printed)
